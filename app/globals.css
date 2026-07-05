@@ -1,0 +1,371 @@
+/* Hallmark · component: app-shell redesign · genre: modern-minimal · theme: Geist (locked, user-mandated)
+ * states: default · hover · focus · active · disabled · loading · error · success
+ * pre-emit critique: P4 H5 E5 S4 R5 V4
+ */
+@import "tailwindcss";
+
+/* Dark mode is class-based: <html class="dark"> */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ---------------------------------------------------------------------------
+   Geist tokens → Tailwind utilities. Values resolve to CSS variables below,
+   so light/dark switch at runtime by toggling the .dark class.
+--------------------------------------------------------------------------- */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-bg-subtle: var(--bg-subtle);
+  --color-panel: var(--panel);
+  --color-panel-2: var(--panel-2);
+  --color-fg: var(--fg);
+  --color-muted: var(--fg-muted);
+  --color-faint: var(--fg-faint);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-text: var(--accent-text);
+  --color-accent-subtle: var(--accent-subtle-bg);
+
+  --radius-xs: 4px;
+  --radius-sm: 6px;   /* Geist: everyday surfaces + controls */
+  --radius-md: 12px;  /* Geist: menus, modals */
+  --radius-lg: 16px;
+
+  --font-sans: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --font-serif: var(--font-instrument-serif), Georgia, "Times New Roman", serif;
+}
+
+/* ---------------------------------------------------------------------------
+   Light theme (Geist design.md)
+--------------------------------------------------------------------------- */
+:root {
+  --bg: #ffffff;
+  --bg-subtle: #fafafa;
+  --panel: #ffffff;
+  --panel-2: #fafafa;
+
+  --fg: #171717;        /* gray-1000 */
+  --fg-muted: #4d4d4d;  /* gray-900 */
+  --fg-faint: #8f8f8f;  /* gray-700 */
+
+  --border: #ebebeb;         /* gray-200 hairline */
+  --border-strong: #dcdcdc;
+  --border-soft: #f2f2f2;    /* gray-100 */
+
+  --accent: #171717;              /* Geist primary action = gray-1000 */
+  --accent-hover: #383838;
+  --accent-fg: #ffffff;
+  --accent-text: #0059ec;        /* blue-800 — links/selection only */
+  --accent-subtle-bg: #f0f7ff;   /* blue-100 */
+  --blue: #006bff;
+
+  --ring: #006bff;
+
+  /* Status: bg / text / border / solid — always paired with a label or dot */
+  --ok-bg: #ecfdec;   --ok-text: #107d32;   --ok-border: #d3fad1;   --ok-solid: #28a948;
+  --warn-bg: #fff6de; --warn-text: #aa4d00; --warn-border: #fff1c1; --warn-solid: #ffa600;
+  --bad-bg: #ffeeef;  --bad-text: #d8001b;  --bad-border: #ffe3e4;  --bad-solid: #ea001d;
+  --info-bg: #f0f7ff; --info-text: #0059ec; --info-border: #dfefff; --info-solid: #006bff;
+  --neu-bg: #f2f2f2;  --neu-text: #4d4d4d;  --neu-border: #e6e6e6;  --neu-solid: #8f8f8f;
+  --pur-bg: #faf0ff;  --pur-text: #7d00cc;  --pur-border: #f6e8ff;  --pur-solid: #a000f8;
+
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.03);
+  --shadow-pop: 0 1px 1px rgba(0,0,0,.02), 0 4px 8px -4px rgba(0,0,0,.06), 0 16px 24px -8px rgba(0,0,0,.08);
+  --shadow-modal: 0 1px 1px rgba(0,0,0,.02), 0 8px 16px -4px rgba(0,0,0,.06), 0 24px 32px -8px rgba(0,0,0,.10);
+
+  --scroll-thumb: #d9d9d9;
+  --scroll-thumb-hover: #bdbdbd;
+  --image-outline: rgba(0, 0, 0, 0.1);
+
+  /* Motion — Geist: short, physical, state-driven */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+  --dur-fast: 100ms;
+  --dur: 150ms;
+
+  color-scheme: light;
+}
+
+/* ---------------------------------------------------------------------------
+   Dark theme (Geist design.dark.md, panels lifted slightly off pure black)
+--------------------------------------------------------------------------- */
+.dark {
+  --bg: #0a0a0b;
+  --bg-subtle: #0e0e10;
+  --panel: #111113;
+  --panel-2: #18181b;
+
+  --fg: #ededed;
+  --fg-muted: #a0a0a0;
+  --fg-faint: #6e6e72;
+
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.14);
+  --border-soft: rgba(255, 255, 255, 0.05);
+
+  --accent: #ededed;             /* Geist dark primary = gray-1000 */
+  --accent-hover: #ffffff;
+  --accent-fg: #0a0a0b;
+  --accent-text: #6cb1ff;
+  --accent-subtle-bg: rgba(0, 110, 254, 0.14);
+  --blue: #0090ff;
+
+  --ring: #0090ff;
+
+  --ok-bg: rgba(0, 202, 80, 0.10);   --ok-text: #4ade80;   --ok-border: rgba(0,202,80,.22);   --ok-solid: #00ac3a;
+  --warn-bg: rgba(255, 174, 0, 0.10); --warn-text: #ffb84d; --warn-border: rgba(255,174,0,.22); --warn-solid: #ffae00;
+  --bad-bg: rgba(255, 86, 95, 0.10);  --bad-text: #ff787f;  --bad-border: rgba(255,86,95,.22);  --bad-solid: #f13242;
+  --info-bg: rgba(0, 144, 255, 0.11); --info-text: #6cb1ff; --info-border: rgba(0,144,255,.24); --info-solid: #0072f5;
+  --neu-bg: rgba(255, 255, 255, 0.06); --neu-text: #a0a0a0; --neu-border: rgba(255,255,255,.10); --neu-solid: #8f8f8f;
+  --pur-bg: rgba(148, 64, 213, 0.12); --pur-text: #c472fb; --pur-border: rgba(148,64,213,.24); --pur-solid: #9440d5;
+
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-pop: 0 1px 1px rgba(0,0,0,.3), 0 4px 12px -4px rgba(0,0,0,.5), 0 16px 32px -8px rgba(0,0,0,.6);
+  --shadow-modal: 0 1px 1px rgba(0,0,0,.3), 0 8px 24px -4px rgba(0,0,0,.5), 0 32px 48px -8px rgba(0,0,0,.7);
+
+  --scroll-thumb: #2a2b2e;
+  --scroll-thumb-hover: #3a3b3f;
+  --image-outline: rgba(255, 255, 255, 0.1);
+
+  color-scheme: dark;
+}
+
+/* ---------------------------------------------------------------------------
+   Base
+--------------------------------------------------------------------------- */
+* { box-sizing: border-box; }
+html { height: 100%; overflow-x: clip; }
+body {
+  min-height: 100%;
+  margin: 0;
+  overflow-x: clip;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+::selection { background: var(--accent-subtle-bg); }
+
+* { scrollbar-width: thin; scrollbar-color: var(--scroll-thumb) transparent; }
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-thumb { background: var(--scroll-thumb); border-radius: 99px; border: 2px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover); background-clip: content-box; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
+}
+
+/* ---------------------------------------------------------------------------
+   Typography utilities (Geist scale)
+--------------------------------------------------------------------------- */
+@layer components {
+  .t-display { font-size: 28px; line-height: 36px; font-weight: 600; letter-spacing: -1.12px; }
+  .t-h1 { font-size: 20px; line-height: 26px; font-weight: 600; letter-spacing: -0.4px; }
+  .t-h2 { font-size: 16px; line-height: 24px; font-weight: 600; letter-spacing: -0.32px; }
+  .t-h3 { font-size: 14px; line-height: 20px; font-weight: 600; letter-spacing: -0.28px; }
+  .t-h4 { font-size: 13px; line-height: 18px; font-weight: 600; letter-spacing: -0.13px; }
+  .t-body { font-size: 13.5px; line-height: 20px; font-weight: 400; }
+  .t-small { font-size: 12.5px; line-height: 17px; font-weight: 400; }
+  .t-label { font-size: 12.5px; line-height: 16px; font-weight: 500; }
+  .t-mono { font-family: var(--font-mono); font-size: 12.5px; line-height: 17px; }
+  .t-eyebrow {
+    font-size: 10.5px; line-height: 15px; font-weight: 500; letter-spacing: 0.05em;
+    text-transform: uppercase; color: var(--fg-faint);
+  }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* ---------------- Focus ring (single shared definition) ---------------- */
+  .focus-ring:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--ring);
+  }
+
+  /* ---------------- Buttons — 8-state, Geist voice ---------------- */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    height: 30px; padding: 0 11px; border-radius: var(--radius-sm);
+    font-size: 12.5px; font-weight: 500; line-height: 1; white-space: nowrap; cursor: pointer;
+    border: 1px solid transparent; color: var(--fg); background: transparent;
+    transition-property: background-color, border-color, color, transform;
+    transition-duration: var(--dur); transition-timing-function: var(--ease-out);
+    user-select: none; position: relative;
+  }
+  .btn:active:not(:disabled) { transform: translateY(0.5px) scale(0.98); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn[aria-busy="true"] { cursor: progress; }
+  .btn svg { flex: none; }
+
+  .btn-primary { background: var(--accent); color: var(--accent-fg); }
+  .btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+
+  .btn-secondary { background: var(--panel); border-color: var(--border-strong); color: var(--fg); }
+  .btn-secondary:hover:not(:disabled) { border-color: var(--fg-faint); }
+
+  .btn-ghost { color: var(--fg-muted); }
+  .btn-ghost:hover:not(:disabled) { background: var(--neu-bg); color: var(--fg); }
+
+  .btn-danger { background: transparent; color: var(--bad-text); }
+  .btn-danger:hover:not(:disabled) { background: var(--bad-bg); }
+
+  .btn-lg { height: 36px; padding: 0 14px; font-size: 13.5px; }
+  .btn-sm { height: 26px; padding: 0 8px; font-size: 12px; }
+  .btn-icon { width: 30px; height: 30px; padding: 0; }
+  /* small visible control, ≥40px touch target via pseudo-element */
+  .btn-icon::after { content: ""; position: absolute; inset: -5px; }
+
+  /* ---------------- Inputs ---------------- */
+  .input, .textarea, .select {
+    width: 100%; background: var(--panel); color: var(--fg);
+    border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+    font-family: inherit; font-size: 13px; line-height: 1.45;
+    transition: border-color var(--dur), box-shadow var(--dur); outline: none;
+  }
+  .input, .select { height: 32px; padding: 0 10px; }
+  .textarea { padding: 7px 10px; min-height: 68px; resize: vertical; }
+  .input::placeholder, .textarea::placeholder { color: var(--fg-faint); }
+  .input:focus, .textarea:focus, .select:focus {
+    border-color: color-mix(in srgb, var(--ring) 60%, var(--border-strong));
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 14%, transparent);
+  }
+  .input:hover:not(:focus), .textarea:hover:not(:focus), .select:hover:not(:focus) { border-color: var(--fg-faint); }
+  .input[aria-invalid="true"], .textarea[aria-invalid="true"] {
+    border-color: var(--bad-solid);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--bad-solid) 12%, transparent);
+  }
+  .select {
+    appearance: none; padding-right: 28px; cursor: pointer;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238f8f8f' stroke-width='2.5'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 9px center;
+  }
+  .field { display: flex; flex-direction: column; gap: 5px; }
+  .field-label { font-size: 12px; font-weight: 500; color: var(--fg-muted); }
+  .field-hint { font-size: 11.5px; color: var(--fg-faint); }
+
+  /* ---------------- Surfaces ---------------- */
+  .card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); box-shadow: var(--shadow-card);
+  }
+  .divider { height: 1px; background: var(--border); border: none; }
+
+  /* ---------------- Badges / pills ---------------- */
+  .pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    height: 20px; padding: 0 8px 0 7px; border-radius: 999px;
+    font-size: 11.5px; font-weight: 500; line-height: 1; white-space: nowrap;
+    border: 1px solid var(--tone-border, var(--neu-border));
+    background: var(--tone-bg, var(--neu-bg)); color: var(--tone-text, var(--neu-text));
+  }
+  .pill .dot { width: 5px; height: 5px; border-radius: 999px; background: var(--tone-solid, var(--neu-solid)); flex: none; }
+  .pill.plain { border-radius: var(--radius-xs); }
+
+  .tone-ok   { --tone-bg: var(--ok-bg);   --tone-text: var(--ok-text);   --tone-border: var(--ok-border);   --tone-solid: var(--ok-solid); }
+  .tone-warn { --tone-bg: var(--warn-bg); --tone-text: var(--warn-text); --tone-border: var(--warn-border); --tone-solid: var(--warn-solid); }
+  .tone-bad  { --tone-bg: var(--bad-bg);  --tone-text: var(--bad-text);  --tone-border: var(--bad-border);  --tone-solid: var(--bad-solid); }
+  .tone-info { --tone-bg: var(--info-bg); --tone-text: var(--info-text); --tone-border: var(--info-border); --tone-solid: var(--info-solid); }
+  .tone-neu  { --tone-bg: var(--neu-bg);  --tone-text: var(--neu-text);  --tone-border: var(--neu-border);  --tone-solid: var(--neu-solid); }
+  .tone-pur  { --tone-bg: var(--pur-bg);  --tone-text: var(--pur-text);  --tone-border: var(--pur-border);  --tone-solid: var(--pur-solid); }
+
+  /* ---------------- Table — lean, task-tracker density ---------------- */
+  .tbl { width: 100%; border-collapse: collapse; }
+  .tbl thead th {
+    position: sticky; top: 0; z-index: 1; text-align: left;
+    font-size: 10.5px; font-weight: 500; letter-spacing: .04em; text-transform: uppercase;
+    color: var(--fg-faint);
+    padding: 7px 12px; background: var(--panel); border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  .tbl tbody td { padding: 8px 12px; border-bottom: 1px solid var(--border-soft); font-size: 13px; vertical-align: middle; }
+  .tbl tbody tr { transition: background-color var(--dur-fast); }
+  .tbl tbody tr:hover { background: var(--panel-2); }
+  .tbl tbody tr:last-child td { border-bottom: none; }
+  .tbl .row-link { cursor: pointer; }
+
+  /* ---------------- Sidebar nav ---------------- */
+  .nav-item {
+    display: flex; align-items: center; gap: 9px; width: 100%; text-align: left;
+    padding: 5px 8px; border-radius: var(--radius-sm); color: var(--fg-muted);
+    font-size: 13px; font-weight: 500; cursor: pointer; border: none; background: none;
+    transition: background-color var(--dur-fast), color var(--dur-fast);
+  }
+  .nav-item:hover { background: var(--neu-bg); color: var(--fg); }
+  .nav-item svg { flex: none; opacity: .75; }
+  .nav-item.active { background: var(--neu-bg); color: var(--fg); }
+  .nav-item.active svg { opacity: 1; }
+  .nav-count { margin-left: auto; font-size: 11.5px; color: var(--fg-faint); font-variant-numeric: tabular-nums; }
+
+  /* ---------------- Misc ---------------- */
+  .kbd {
+    font-family: var(--font-mono); font-size: 10.5px; padding: 1px 4px; border-radius: 4px;
+    background: var(--neu-bg); border: 1px solid var(--border); color: var(--fg-muted);
+  }
+  .link { color: var(--accent-text); text-decoration: none; }
+  .link:hover { text-decoration: underline; text-underline-offset: 2px; }
+  .img-outline { box-shadow: inset 0 0 0 1px var(--image-outline); }
+
+  /* ---------------- Invoice sheet — A4 preview ---------------- */
+  /* A4 = 210 × 297 mm → aspect-ratio 1 / 1.4142. The preview column keeps the
+     true ratio; the inner sheet is laid out at a fixed 794px design width
+     (A4 @ 96dpi) and scaled down with transform so type stays proportional. */
+  .a4-frame {
+    aspect-ratio: 210 / 297;
+    width: 100%;
+    position: relative;
+    overflow: hidden;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: #ffffff;
+    box-shadow: var(--shadow-card);
+  }
+  .dark .a4-frame { border-color: var(--border-strong); }
+  .a4-sheet {
+    /* Document-local palette — a rendered invoice is always paper-white,
+       independent of the app theme. These are the sheet's only colours. */
+    --sh-ink: #171717;
+    --sh-muted: #4d4d4d;
+    --sh-faint: #8f8f8f;
+    --sh-line: #ebebeb;
+    --sh-soft: #fafafa;
+    --sh-ok: #107d32;
+    --sh-ok-bg: #ecfdec;
+    position: absolute; top: 0; left: 0;
+    width: 794px; height: 1123px;
+    transform-origin: top left;
+    display: flex; flex-direction: column;
+    background: #ffffff; color: var(--sh-ink);
+    font-family: var(--font-sans);
+  }
+}
+
+/* Single orchestrated page entrance (one-shot, content only) */
+@keyframes rise {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.rise { animation: rise 240ms var(--ease-out) both; }
+
+/* ---------------------------------------------------------------------------
+   Print — clean invoice output
+--------------------------------------------------------------------------- */
+@media print {
+  .no-print { display: none !important; }
+  html, body { height: auto !important; background: #fff; overflow: visible !important; }
+  main { overflow: visible !important; height: auto !important; }
+  .print-area { padding: 0 !important; max-width: none !important; }
+  .print-grid { display: block !important; }
+  /* Un-scale the preview: print the sheet at natural A4 size. */
+  .a4-frame {
+    aspect-ratio: auto !important; overflow: visible !important;
+    border: none !important; border-radius: 0 !important; box-shadow: none !important;
+  }
+  .a4-sheet {
+    position: static !important; transform: none !important;
+    width: auto !important; height: auto !important; min-height: 0 !important;
+  }
+  @page { margin: 0; size: A4; }
+}

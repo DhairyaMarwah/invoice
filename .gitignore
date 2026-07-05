@@ -1,0 +1,8 @@
+/node_modules
+/.next
+/out
+next-env.d.ts
+*.tsbuildinfo
+
+# Local data — SQLite database and uploaded contract PDFs
+/data

@@ -1,0 +1,147 @@
+import type {
+  BillingCycle,
+  ClientStatus,
+  ContractStatus,
+  InvoiceStatus,
+  PaymentMethod,
+} from './types';
+
+export const CURRENCIES = ['INR', 'USD', 'EUR', 'GBP', 'AED', 'SGD', 'AUD', 'CAD'];
+
+const CURRENCY_LOCALE: Record<string, string> = {
+  INR: 'en-IN',
+  USD: 'en-US',
+  EUR: 'en-IE',
+  GBP: 'en-GB',
+  AED: 'en-AE',
+  SGD: 'en-SG',
+  AUD: 'en-AU',
+  CAD: 'en-CA',
+};
+
+export function money(amount: number, currency = 'INR'): string {
+  const cur = currency || 'INR';
+  try {
+    return new Intl.NumberFormat(CURRENCY_LOCALE[cur] ?? 'en-US', {
+      style: 'currency',
+      currency: cur,
+      maximumFractionDigits: 2,
+      minimumFractionDigits: amount % 1 === 0 ? 0 : 2,
+    }).format(amount || 0);
+  } catch {
+    return `${cur} ${(amount || 0).toLocaleString()}`;
+  }
+}
+
+/** Compact money for KPI tiles, e.g. ₹12.4L / $1.2M */
+export function moneyCompact(amount: number, currency = 'INR'): string {
+  const cur = currency || 'INR';
+  try {
+    return new Intl.NumberFormat(CURRENCY_LOCALE[cur] ?? 'en-US', {
+      style: 'currency',
+      currency: cur,
+      notation: 'compact',
+      maximumFractionDigits: 1,
+    }).format(amount || 0);
+  } catch {
+    return money(amount, cur);
+  }
+}
+
+export function fmtDate(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const d = new Date(iso.length <= 10 ? iso + 'T00:00:00' : iso);
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+export function fmtDateTime(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const d = new Date(iso.length <= 10 ? iso + 'T00:00:00' : iso.replace(' ', 'T') + 'Z');
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleString('en-GB', {
+    day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
+}
+
+export function todayISO(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+export function addDays(iso: string, days: number): string {
+  const d = new Date(iso + 'T00:00:00');
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+export function daysUntil(iso: string | null): number | null {
+  if (!iso) return null;
+  const d = new Date(iso + 'T00:00:00');
+  if (isNaN(d.getTime())) return null;
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  return Math.round((d.getTime() - now.getTime()) / 86400000);
+}
+
+// ---- Labels + tones (tone class drives the pill colour) ----
+type Tone = 'ok' | 'warn' | 'bad' | 'info' | 'neu' | 'pur';
+
+export const CLIENT_STATUS: Record<ClientStatus, { label: string; tone: Tone }> = {
+  active: { label: 'Active', tone: 'ok' },
+  prospective: { label: 'Prospective', tone: 'info' },
+  not_engaged: { label: 'Not Engaged', tone: 'warn' },
+  inactive: { label: 'Inactive', tone: 'neu' },
+  past: { label: 'Past', tone: 'pur' },
+};
+
+export const CONTRACT_STATUS: Record<ContractStatus, { label: string; tone: Tone }> = {
+  active: { label: 'Active', tone: 'ok' },
+  draft: { label: 'Draft', tone: 'neu' },
+  expired: { label: 'Expired', tone: 'warn' },
+  terminated: { label: 'Terminated', tone: 'bad' },
+};
+
+export const BILLING_CYCLE: Record<BillingCycle, { label: string; short: string }> = {
+  annual: { label: 'Annual', short: '/yr' },
+  monthly: { label: 'Monthly', short: '/mo' },
+  weekly: { label: 'Weekly', short: '/wk' },
+  one_time: { label: 'One-time', short: '' },
+};
+
+export const PAYMENT_METHOD: Record<PaymentMethod, string> = {
+  bank_transfer: 'Bank Transfer',
+  upi: 'UPI',
+  card: 'Card',
+  cheque: 'Cheque',
+  cash: 'Cash',
+  other: 'Other',
+};
+
+export function invoiceTone(status: InvoiceStatus, dueDate: string | null): {
+  label: string;
+  tone: Tone;
+} {
+  if (status === 'paid') return { label: 'Paid', tone: 'ok' };
+  const d = daysUntil(dueDate);
+  if (d !== null && d < 0) return { label: 'Overdue', tone: 'bad' };
+  return { label: 'Unpaid', tone: 'warn' };
+}
+
+/** Annualised value of a contract, for recurring-revenue reporting. */
+export function annualized(amount: number, cycle: BillingCycle): number {
+  switch (cycle) {
+    case 'annual': return amount;
+    case 'monthly': return amount * 12;
+    case 'weekly': return amount * 52;
+    case 'one_time': return 0; // not recurring
+  }
+}
+
+export function initials(name: string): string {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0]?.toUpperCase() ?? '')
+    .join('');
+}
