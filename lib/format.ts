@@ -4,6 +4,13 @@ import type {
   ContractStatus,
   InvoiceStatus,
   PaymentMethod,
+  SalesStage,
+  ClientCategory,
+  ClientSegment,
+  ContactRole,
+  ActivityKind,
+  ApprovalStatus,
+  ApprovalKind,
 } from './types';
 
 export const CURRENCIES = ['INR', 'USD', 'EUR', 'GBP', 'AED', 'SGD', 'AUD', 'CAD'];
@@ -144,4 +151,93 @@ export function initials(name: string): string {
     .slice(0, 2)
     .map((w) => w[0]?.toUpperCase() ?? '')
     .join('');
+}
+
+// ---- CRM / sales ----
+/** The 8-stage sales funnel, in pipeline order. */
+export const SALES_STAGE: Record<SalesStage, { label: string; short: string; tone: Tone; order: number; open: boolean }> = {
+  untouched: { label: 'Untouched', short: 'Untouched', tone: 'neu', order: 0, open: true },
+  communication_started: { label: 'Communication Started', short: 'Comms Started', tone: 'info', order: 1, open: true },
+  active_communication: { label: 'Active Communication', short: 'Active Comms', tone: 'info', order: 2, open: true },
+  physical_meetings: { label: 'Physical Meetings', short: 'Meetings', tone: 'pur', order: 3, open: true },
+  sales_cycle: { label: 'Sales Cycle in Motion', short: 'Sales Cycle', tone: 'warn', order: 4, open: true },
+  active_customer: { label: 'Active Customer', short: 'Active', tone: 'ok', order: 5, open: false },
+  past_customer: { label: 'Past Customer', short: 'Past', tone: 'neu', order: 6, open: false },
+  dropped: { label: 'Dropped Customer', short: 'Dropped', tone: 'bad', order: 7, open: false },
+};
+
+export const SALES_STAGE_ORDER: SalesStage[] = (Object.keys(SALES_STAGE) as SalesStage[])
+  .sort((a, b) => SALES_STAGE[a].order - SALES_STAGE[b].order);
+
+export const CLIENT_CATEGORY: Record<ClientCategory, string> = {
+  government: 'Government',
+  private: 'Private',
+};
+
+export const CLIENT_SEGMENT: Record<ClientSegment, { label: string; tone: Tone }> = {
+  university: { label: 'University', tone: 'info' },
+  college: { label: 'College', tone: 'pur' },
+  edtech: { label: 'EdTech', tone: 'warn' },
+  k12: { label: 'K12', tone: 'ok' },
+};
+
+export const CONTACT_ROLE: Record<ContactRole, string> = {
+  poc: 'Point of Contact',
+  promoter: 'Promoter / Leadership',
+  accounts: 'Accounts POC',
+  other: 'Other',
+};
+
+export const ACTIVITY_KIND: Record<ActivityKind, { label: string; tone: Tone }> = {
+  note: { label: 'Note', tone: 'neu' },
+  call: { label: 'Call', tone: 'info' },
+  email: { label: 'Email', tone: 'info' },
+  meeting: { label: 'Meeting', tone: 'pur' },
+  proposal: { label: 'Proposal', tone: 'warn' },
+  file: { label: 'File', tone: 'neu' },
+  stage: { label: 'Stage change', tone: 'info' },
+  contract: { label: 'Contract', tone: 'ok' },
+  invoice: { label: 'Invoice', tone: 'info' },
+  payment: { label: 'Payment', tone: 'ok' },
+};
+
+export const APPROVAL_STATUS: Record<ApprovalStatus, { label: string; tab: string; tone: Tone }> = {
+  pending: { label: 'Pending', tab: 'Pending', tone: 'warn' },
+  approved: { label: 'Approved', tab: 'Completed', tone: 'ok' },
+  rejected: { label: 'Rejected', tab: 'Rejected', tone: 'bad' },
+};
+
+export const APPROVAL_KIND: Record<ApprovalKind, string> = {
+  proposal: 'Proposal',
+  discount: 'Discount',
+  contract: 'Contract',
+  invoice: 'Invoice',
+  expense: 'Expense',
+  other: 'Other',
+};
+
+/** Common lead sources (for a datalist). */
+export const LEAD_SOURCES = [
+  'Inbound', 'Referral', 'Outbound', 'Event / Conference', 'Partner', 'Website',
+  'Cold Outreach', 'Existing Network', 'RFP / Tender', 'LinkedIn',
+];
+
+/** Plain integer with thousands separators (student/faculty strength etc.). */
+export function fmtNum(n: number | null | undefined): string {
+  if (n == null || isNaN(n)) return '—';
+  return new Intl.NumberFormat('en-IN').format(n);
+}
+
+export function fmtRelative(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const d = new Date(iso.length <= 10 ? iso + 'T00:00:00' : iso.replace(' ', 'T') + 'Z');
+  if (isNaN(d.getTime())) return '—';
+  const diff = Date.now() - d.getTime();
+  const day = 86400000;
+  if (diff < 0) return fmtDate(iso);
+  if (diff < 60000) return 'just now';
+  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+  if (diff < day) return `${Math.floor(diff / 3600000)}h ago`;
+  if (diff < 7 * day) return `${Math.floor(diff / day)}d ago`;
+  return fmtDate(iso.slice(0, 10));
 }

@@ -11,7 +11,7 @@ const instrumentSerif = Instrument_Serif({
 });
 import './globals.css';
 import { Sidebar } from '@/components/Sidebar';
-import { counts, getSettings } from '@/lib/repo';
+import { counts, getSettings, approvalCounts } from '@/lib/repo';
 
 export const metadata: Metadata = {
   title: 'Ledger — Contracts & Invoices',
@@ -22,7 +22,7 @@ export const metadata: Metadata = {
 const themeScript = `(function(){try{var t=localStorage.getItem('theme');if(t==='dark'||(!t&&window.matchMedia('(prefers-color-scheme: dark)').matches)){document.documentElement.classList.add('dark');}}catch(e){}})();`;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  const c = counts();
+  const c = { ...counts(), pendingApprovals: approvalCounts().pending };
   const org = getSettings().org_name;
 
   return (

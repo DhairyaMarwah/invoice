@@ -87,3 +87,33 @@ export const IconArrowDown = (p: SVGProps<SVGSVGElement>) => (
 export const IconBox = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><path d="M21 8l-9-5-9 5v8l9 5 9-5V8z" /><path d="M3 8l9 5 9-5M12 13v8" /></svg>
 );
+export const IconPipeline = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><rect x="3" y="4" width="5" height="16" rx="1" /><rect x="10" y="4" width="5" height="11" rx="1" /><rect x="17" y="4" width="4" height="7" rx="1" /></svg>
+);
+export const IconActivity = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M3 12h4l2 6 4-14 2 8h6" /></svg>
+);
+export const IconApproval = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M9 11l3 3 8-8" /><path d="M21 12v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h11" /></svg>
+);
+export const IconUser = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><circle cx="12" cy="8" r="4" /><path d="M4 20a8 8 0 0 1 16 0" /></svg>
+);
+export const IconLinkedIn = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M7 10v7M7 7v.01M11 17v-4a2 2 0 0 1 4 0v4M11 10v7" /></svg>
+);
+export const IconMail = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M3 7l9 6 9-6" /></svg>
+);
+export const IconPhone = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z" /></svg>
+);
+export const IconPin = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z" /><circle cx="12" cy="10" r="2.5" /></svg>
+);
+export const IconBuilding = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><rect x="4" y="3" width="16" height="18" rx="1" /><path d="M9 7h.01M15 7h.01M9 11h.01M15 11h.01M9 15h.01M15 15h.01M10 21v-3h4v3" /></svg>
+);
+export const IconClose = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M6 6l12 12M18 6L6 18" /></svg>
+);

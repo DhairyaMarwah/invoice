@@ -2,11 +2,17 @@ import 'server-only';
 import { db } from './db';
 import type {
   Account,
+  Activity,
+  ActivityKind,
+  Approval,
+  ApprovalStatus,
   Client,
+  Contact,
   Contract,
   ContractItem,
   Invoice,
   InvoiceItem,
+  SalesStage,
   Settings,
 } from './types';
 import { annualized } from './format';
@@ -72,25 +78,26 @@ export interface ClientRow extends Client {
   invoiced: number;
   collected: number;
   outstanding: number;
+  last_activity_at: string | null;
 }
 
-export function listClients(opts: { status?: string; q?: string } = {}): ClientRow[] {
+export function listClients(opts: { status?: string; stage?: string; segment?: string; q?: string } = {}): ClientRow[] {
   const where: string[] = [];
   const args: Bind[] = [];
-  if (opts.status && opts.status !== 'all') {
-    where.push('c.status = ?');
-    args.push(opts.status);
-  }
+  if (opts.status && opts.status !== 'all') { where.push('c.status = ?'); args.push(opts.status); }
+  if (opts.stage && opts.stage !== 'all') { where.push('c.sales_stage = ?'); args.push(opts.stage); }
+  if (opts.segment && opts.segment !== 'all') { where.push('c.segment = ?'); args.push(opts.segment); }
   if (opts.q) {
-    where.push('(c.name LIKE ? OR c.email LIKE ? OR c.gst_number LIKE ?)');
+    where.push('(c.name LIKE ? OR c.email LIKE ? OR c.gst_number LIKE ? OR c.source LIKE ?)');
     const like = `%${opts.q}%`;
-    args.push(like, like, like);
+    args.push(like, like, like, like);
   }
   const sql = `
     SELECT c.*,
       (SELECT COUNT(*) FROM contracts ct WHERE ct.client_id = c.id) AS contract_count,
       (SELECT COALESCE(SUM(i.total),0) FROM invoices i WHERE i.client_id = c.id) AS invoiced,
-      (SELECT COALESCE(SUM(i.total),0) FROM invoices i WHERE i.client_id = c.id AND i.status='paid') AS collected
+      (SELECT COALESCE(SUM(i.total),0) FROM invoices i WHERE i.client_id = c.id AND i.status='paid') AS collected,
+      (SELECT MAX(a.occurred_at) FROM activities a WHERE a.client_id = c.id) AS last_activity_at
     FROM clients c
     ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
     ORDER BY c.name COLLATE NOCASE ASC`;
@@ -99,45 +106,71 @@ export function listClients(opts: { status?: string; q?: string } = {}): ClientR
   return rows;
 }
 
+export function clientStageCounts(): Record<string, number> {
+  const rows = db.prepare('SELECT sales_stage, COUNT(*) AS n FROM clients GROUP BY sales_stage').all() as {
+    sales_stage: string;
+    n: number;
+  }[];
+  const out: Record<string, number> = {};
+  for (const r of rows) out[r.sales_stage] = r.n;
+  return out;
+}
+
 export function getClient(id: number): Client | null {
   const row = db.prepare('SELECT * FROM clients WHERE id = ?').get(id);
   return row ? plain<Client>(row) : null;
 }
 
+// All writable client columns, in a single source of truth.
+const CLIENT_COLS = [
+  'name', 'status', 'sales_stage', 'email', 'phone', 'address', 'gst_number', 'currency', 'notes',
+  'category', 'segment', 'website', 'total_campuses', 'locations', 'student_strength', 'faculty_strength',
+  'nirf', 'nirf_category', 'nirf_rank', 'qs_ranking', 'qs_details',
+  'source', 'projected_value', 'expected_close', 'engagement_started', 'issues',
+] as const;
+
+function clientValues(d: Partial<Client>): Bind[] {
+  const v: Record<string, Bind> = {
+    name: d.name ?? 'Untitled Client',
+    status: d.status ?? 'prospective',
+    sales_stage: d.sales_stage ?? 'untouched',
+    email: d.email ?? null,
+    phone: d.phone ?? null,
+    address: d.address ?? null,
+    gst_number: d.gst_number ?? null,
+    currency: d.currency ?? 'INR',
+    notes: d.notes ?? null,
+    category: d.category ?? null,
+    segment: d.segment ?? null,
+    website: d.website ?? null,
+    total_campuses: d.total_campuses ?? null,
+    locations: d.locations ?? null,
+    student_strength: d.student_strength ?? null,
+    faculty_strength: d.faculty_strength ?? null,
+    nirf: d.nirf ? 1 : 0,
+    nirf_category: d.nirf_category ?? null,
+    nirf_rank: d.nirf_rank ?? null,
+    qs_ranking: d.qs_ranking ? 1 : 0,
+    qs_details: d.qs_details ?? null,
+    source: d.source ?? null,
+    projected_value: d.projected_value ?? null,
+    expected_close: d.expected_close ?? null,
+    engagement_started: d.engagement_started ?? null,
+    issues: d.issues ?? null,
+  };
+  return CLIENT_COLS.map((c) => v[c]);
+}
+
 export function createClient(d: Partial<Client>): number {
-  const r = db
-    .prepare(
-      `INSERT INTO clients(name, status, email, phone, address, gst_number, currency, notes)
-       VALUES(?,?,?,?,?,?,?,?)`,
-    )
-    .run(
-      d.name ?? 'Untitled Client',
-      d.status ?? 'prospective',
-      d.email ?? null,
-      d.phone ?? null,
-      d.address ?? null,
-      d.gst_number ?? null,
-      d.currency ?? 'INR',
-      d.notes ?? null,
-    );
+  const cols = CLIENT_COLS.join(', ');
+  const ph = CLIENT_COLS.map(() => '?').join(', ');
+  const r = db.prepare(`INSERT INTO clients(${cols}) VALUES(${ph})`).run(...clientValues(d));
   return Number(r.lastInsertRowid);
 }
 
 export function updateClient(id: number, d: Partial<Client>): void {
-  db.prepare(
-    `UPDATE clients SET name=?, status=?, email=?, phone=?, address=?, gst_number=?, currency=?, notes=?, updated_at=datetime('now')
-     WHERE id=?`,
-  ).run(
-    d.name ?? '',
-    d.status ?? 'prospective',
-    d.email ?? null,
-    d.phone ?? null,
-    d.address ?? null,
-    d.gst_number ?? null,
-    d.currency ?? 'INR',
-    d.notes ?? null,
-    id,
-  );
+  const set = CLIENT_COLS.map((c) => `${c}=?`).join(', ');
+  db.prepare(`UPDATE clients SET ${set}, updated_at=datetime('now') WHERE id=?`).run(...clientValues(d), id);
 }
 
 export function deleteClient(id: number): void {
@@ -213,6 +246,8 @@ export function createContract(d: Partial<Contract>, items: { label: string; val
       );
     const cid = Number(r.lastInsertRowid);
     replaceContractItems(cid, items);
+    logActivity(d.client_id!, 'contract', `Contract added — ${d.title ?? 'Untitled Contract'}`, null,
+      { contract_id: cid, amount: d.amount ?? 0, currency: d.currency ?? 'INR' });
     return cid;
   });
 }
@@ -397,6 +432,8 @@ export function createInvoice(
     lineItems.forEach((it, i) =>
       stmt.run(id, it.description || '', it.qty || 0, it.unit_price || 0, +((it.qty || 0) * (it.unit_price || 0)).toFixed(2), i),
     );
+    logActivity(d.client_id, 'invoice', `Invoice ${d.invoice_number} generated`, null,
+      { invoice_id: id, total, currency: d.currency });
     if (opts.bumpSeq) {
       const s = getSettings();
       const next = (parseInt(s.invoice_next_seq || '1', 10) || 1) + 1;
@@ -455,6 +492,10 @@ export function markPaid(
     `UPDATE invoices SET status='paid', paid_at=?, payment_method=?, payment_account=?, transaction_ref=?, payment_proof=COALESCE(?, payment_proof), updated_at=datetime('now')
      WHERE id=?`,
   ).run(d.paid_at, d.payment_method, d.payment_account, d.transaction_ref, d.payment_proof ?? null, id);
+  const iv = db.prepare('SELECT client_id, invoice_number, total, currency FROM invoices WHERE id=?').get(id) as
+    | { client_id: number; invoice_number: string; total: number; currency: string } | undefined;
+  if (iv) logActivity(iv.client_id, 'payment', `Payment recorded — ${iv.invoice_number}`, null,
+    { invoice_id: id, total: iv.total, currency: iv.currency });
 }
 
 export function markUnpaid(id: number): void {
@@ -772,4 +813,207 @@ export function monthDeltas(): { collected: MonthDelta; invoiced: MonthDelta; in
     invoiced: delta(g('SUM(total)', '+0 months'), g('SUM(total)', '-1 months')),
     invoices: delta(g('COUNT(*)', '+0 months'), g('COUNT(*)', '-1 months')),
   };
+}
+
+// ================================================================ Contacts
+export function contactsByClient(clientId: number): Contact[] {
+  return plainAll<Contact>(
+    db.prepare('SELECT * FROM contacts WHERE client_id = ? ORDER BY sort, id').all(clientId),
+  );
+}
+
+export function replaceContacts(clientId: number, rows: Partial<Contact>[]): void {
+  tx(() => {
+    db.prepare('DELETE FROM contacts WHERE client_id = ?').run(clientId);
+    const stmt = db.prepare(
+      'INSERT INTO contacts(client_id, role, name, email, phone, location, linkedin, sort) VALUES(?,?,?,?,?,?,?,?)',
+    );
+    rows
+      .filter((r) => (r.name || r.email || r.phone || r.linkedin || '').trim())
+      .forEach((r, i) => stmt.run(clientId, r.role ?? 'poc', r.name ?? null, r.email ?? null, r.phone ?? null, r.location ?? null, r.linkedin ?? null, i));
+  });
+}
+
+// ============================================================== Activities
+export function logActivity(
+  clientId: number,
+  kind: ActivityKind,
+  title: string,
+  body: string | null = null,
+  meta: Record<string, unknown> | null = null,
+  occurredAt?: string,
+  file?: { file: string; name: string } | null,
+): number {
+  const r = db
+    .prepare(
+      `INSERT INTO activities(client_id, kind, title, body, occurred_at, file, file_name, meta)
+       VALUES(?,?,?,?,COALESCE(?, datetime('now')),?,?,?)`,
+    )
+    .run(clientId, kind, title, body, occurredAt ?? null, file?.file ?? null, file?.name ?? null, meta ? JSON.stringify(meta) : null);
+  return Number(r.lastInsertRowid);
+}
+
+export function activitiesByClient(clientId: number): Activity[] {
+  return plainAll<Activity>(
+    db.prepare('SELECT * FROM activities WHERE client_id = ? ORDER BY occurred_at DESC, id DESC').all(clientId),
+  );
+}
+
+export function deleteActivity(id: number): void {
+  db.prepare('DELETE FROM activities WHERE id = ?').run(id);
+}
+
+export interface ActivityRow extends Activity {
+  client_name: string;
+}
+
+export function recentActivities(limit = 12): ActivityRow[] {
+  return plainAll<ActivityRow>(
+    db
+      .prepare(
+        `SELECT a.*, c.name AS client_name FROM activities a JOIN clients c ON c.id = a.client_id
+         ORDER BY a.occurred_at DESC, a.id DESC LIMIT ?`,
+      )
+      .all(limit),
+  );
+}
+
+// =============================================================== Approvals
+export interface ApprovalRow extends Approval {
+  client_name: string | null;
+}
+
+const APPROVAL_SELECT = `SELECT a.*, c.name AS client_name FROM approvals a LEFT JOIN clients c ON c.id = a.client_id`;
+
+export function listApprovals(status?: string): ApprovalRow[] {
+  const where = status && status !== 'all' ? 'WHERE a.status = ?' : '';
+  const args = status && status !== 'all' ? [status] : [];
+  return plainAll<ApprovalRow>(
+    db.prepare(`${APPROVAL_SELECT} ${where} ORDER BY (a.status='pending') DESC, a.created_at DESC`).all(...args),
+  );
+}
+
+export function getApproval(id: number): ApprovalRow | null {
+  const row = db.prepare(`${APPROVAL_SELECT} WHERE a.id = ?`).get(id);
+  return row ? plain<ApprovalRow>(row) : null;
+}
+
+export function approvalCounts(): Record<ApprovalStatus, number> {
+  const rows = db.prepare('SELECT status, COUNT(*) AS n FROM approvals GROUP BY status').all() as {
+    status: ApprovalStatus;
+    n: number;
+  }[];
+  const out = { pending: 0, approved: 0, rejected: 0 } as Record<ApprovalStatus, number>;
+  for (const r of rows) out[r.status] = r.n;
+  return out;
+}
+
+export function createApproval(d: Partial<Approval>): number {
+  const r = db
+    .prepare(
+      `INSERT INTO approvals(title, detail, kind, client_id, contract_id, invoice_id, amount, currency, requested_by, status)
+       VALUES(?,?,?,?,?,?,?,?,?, 'pending')`,
+    )
+    .run(
+      d.title ?? 'Approval', d.detail ?? null, d.kind ?? 'other',
+      d.client_id ?? null, d.contract_id ?? null, d.invoice_id ?? null,
+      d.amount ?? null, d.currency ?? null, d.requested_by ?? 'You',
+    );
+  return Number(r.lastInsertRowid);
+}
+
+export function decideApproval(id: number, status: ApprovalStatus, note: string, by = 'You'): void {
+  db.prepare(
+    `UPDATE approvals SET status=?, decision_note=?, decided_by=?, decided_at=datetime('now') WHERE id=?`,
+  ).run(status, note || null, by, id);
+}
+
+export function deleteApproval(id: number): void {
+  db.prepare('DELETE FROM approvals WHERE id = ?').run(id);
+}
+
+// =============================================================== Pipeline
+export interface PipelineClient {
+  id: number;
+  name: string;
+  sales_stage: SalesStage;
+  segment: string | null;
+  source: string | null;
+  projected_value: number | null;
+  currency: string;
+  expected_close: string | null;
+  last_activity_at: string | null;
+  outstanding: number;
+}
+
+export function pipelineClients(): PipelineClient[] {
+  return plainAll<PipelineClient>(
+    db
+      .prepare(
+        `SELECT c.id, c.name, c.sales_stage, c.segment, c.source, c.projected_value, c.currency, c.expected_close,
+          (SELECT MAX(a.occurred_at) FROM activities a WHERE a.client_id = c.id) AS last_activity_at,
+          (SELECT COALESCE(SUM(i.total),0) - COALESCE(SUM(CASE WHEN i.status='paid' THEN i.total ELSE 0 END),0)
+             FROM invoices i WHERE i.client_id = c.id) AS outstanding
+        FROM clients c ORDER BY c.projected_value DESC NULLS LAST, c.name COLLATE NOCASE ASC`,
+      )
+      .all(),
+  );
+}
+
+export interface StageAgg {
+  stage: SalesStage;
+  count: number;
+  projected: number;
+}
+
+export function pipelineFunnel(): StageAgg[] {
+  return plainAll<StageAgg>(
+    db.prepare('SELECT sales_stage AS stage, COUNT(*) AS count, COALESCE(SUM(projected_value),0) AS projected FROM clients GROUP BY sales_stage').all(),
+  );
+}
+
+export function setSalesStage(clientId: number, stage: SalesStage): void {
+  const cur = db.prepare('SELECT sales_stage, name FROM clients WHERE id=?').get(clientId) as
+    | { sales_stage: SalesStage; name: string } | undefined;
+  if (!cur || cur.sales_stage === stage) {
+    if (cur) db.prepare("UPDATE clients SET sales_stage=?, updated_at=datetime('now') WHERE id=?").run(stage, clientId);
+    return;
+  }
+  tx(() => {
+    db.prepare("UPDATE clients SET sales_stage=?, updated_at=datetime('now') WHERE id=?").run(stage, clientId);
+    logActivity(clientId, 'stage', 'Stage moved', null, { from: cur.sales_stage, to: stage });
+  });
+}
+
+/** Clients that need attention: expected-close within `days`, or open & stale. */
+export interface FollowUp {
+  id: number;
+  name: string;
+  sales_stage: SalesStage;
+  expected_close: string | null;
+  last_activity_at: string | null;
+  reason: string;
+}
+
+export function followUps(limit = 8): FollowUp[] {
+  const rows = db
+    .prepare(
+      `SELECT c.id, c.name, c.sales_stage, c.expected_close,
+        (SELECT MAX(a.occurred_at) FROM activities a WHERE a.client_id = c.id) AS last_activity_at
+      FROM clients c
+      WHERE c.sales_stage IN ('communication_started','active_communication','physical_meetings','sales_cycle')`,
+    )
+    .all() as Omit<FollowUp, 'reason'>[];
+  const now = Date.now();
+  const scored = rows.map((r) => {
+    const closeIn = r.expected_close ? Math.round((new Date(r.expected_close + 'T00:00:00').getTime() - now) / 86400000) : null;
+    const staleDays = r.last_activity_at ? Math.floor((now - new Date(r.last_activity_at.replace(' ', 'T') + 'Z').getTime()) / 86400000) : 999;
+    let reason = '';
+    let priority = 0;
+    if (closeIn !== null && closeIn <= 14) { reason = closeIn < 0 ? `Close date passed ${-closeIn}d ago` : `Expected close in ${closeIn}d`; priority = 100 - closeIn; }
+    else if (staleDays >= 14) { reason = `No activity for ${staleDays === 999 ? 'a while' : staleDays + 'd'}`; priority = staleDays; }
+    return { ...r, reason, priority };
+  }).filter((r) => r.reason);
+  scored.sort((a, b) => b.priority - a.priority);
+  return scored.slice(0, limit).map(({ priority, ...r }) => { void priority; return r; });
 }

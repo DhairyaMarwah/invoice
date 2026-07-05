@@ -5,6 +5,25 @@ export type ClientStatus =
   | 'not_engaged'
   | 'past';
 
+/** Sales-pipeline position — the "Status of Client" funnel. */
+export type SalesStage =
+  | 'untouched'
+  | 'communication_started'
+  | 'active_communication'
+  | 'physical_meetings'
+  | 'sales_cycle'
+  | 'active_customer'
+  | 'past_customer'
+  | 'dropped';
+
+export type ClientCategory = 'government' | 'private';
+export type ClientSegment = 'university' | 'college' | 'edtech' | 'k12';
+export type ContactRole = 'poc' | 'promoter' | 'accounts' | 'other';
+export type ActivityKind =
+  | 'note' | 'call' | 'email' | 'meeting' | 'proposal' | 'file' | 'stage' | 'contract' | 'invoice' | 'payment';
+export type ApprovalStatus = 'pending' | 'approved' | 'rejected';
+export type ApprovalKind = 'proposal' | 'discount' | 'contract' | 'invoice' | 'expense' | 'other';
+
 export type BillingCycle = 'annual' | 'monthly' | 'weekly' | 'one_time';
 export type ContractStatus = 'active' | 'draft' | 'expired' | 'terminated';
 export type InvoiceStatus = 'unpaid' | 'paid';
@@ -20,14 +39,78 @@ export interface Client {
   id: number;
   name: string;
   status: ClientStatus;
+  sales_stage: SalesStage;
   email: string | null;
   phone: string | null;
   address: string | null;
   gst_number: string | null;
   currency: string;
   notes: string | null;
+  // Institution profile
+  category: ClientCategory | null;
+  segment: ClientSegment | null;
+  website: string | null;
+  total_campuses: number | null;
+  locations: string | null;
+  student_strength: number | null;
+  faculty_strength: number | null;
+  nirf: number; // 0/1
+  nirf_category: string | null;
+  nirf_rank: number | null;
+  qs_ranking: number; // 0/1
+  qs_details: string | null;
+  // Sales
+  source: string | null;
+  projected_value: number | null;
+  expected_close: string | null;
+  engagement_started: string | null;
+  issues: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface Contact {
+  id: number;
+  client_id: number;
+  role: ContactRole;
+  name: string | null;
+  email: string | null;
+  phone: string | null;
+  location: string | null;
+  linkedin: string | null;
+  sort: number;
+  created_at: string;
+}
+
+export interface Activity {
+  id: number;
+  client_id: number;
+  kind: ActivityKind;
+  title: string | null;
+  body: string | null;
+  occurred_at: string;
+  file: string | null;
+  file_name: string | null;
+  meta: string | null;
+  created_at: string;
+}
+
+export interface Approval {
+  id: number;
+  title: string;
+  detail: string | null;
+  kind: ApprovalKind;
+  client_id: number | null;
+  contract_id: number | null;
+  invoice_id: number | null;
+  amount: number | null;
+  currency: string | null;
+  status: ApprovalStatus;
+  requested_by: string | null;
+  decided_by: string | null;
+  decided_at: string | null;
+  decision_note: string | null;
+  created_at: string;
 }
 
 export interface Contract {

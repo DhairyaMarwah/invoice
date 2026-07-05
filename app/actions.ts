@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { UPLOAD_DIR } from '@/lib/db';
 import * as repo from '@/lib/repo';
 import { extract, type Extraction } from '@/lib/extract';
-import type { Client, Contract } from '@/lib/types';
+import type { Activity, Approval, Client, Contact, Contract } from '@/lib/types';
 
 // ---- FormData helpers ----
 const s = (fd: FormData, k: string): string => String(fd.get(k) ?? '').trim();
@@ -47,37 +47,137 @@ function zip<T extends Record<string, unknown[]>>(fd: FormData, keys: (keyof T)[
 }
 
 // ============================================================ Clients
-export async function createClientAction(fd: FormData): Promise<void> {
-  const id = repo.createClient({
+const intOrNull = (fd: FormData, k: string): number | null => {
+  const raw = String(fd.get(k) ?? '').replace(/,/g, '').trim();
+  if (raw === '') return null;
+  const v = parseInt(raw, 10);
+  return isNaN(v) ? null : v;
+};
+const numOrNull = (fd: FormData, k: string): number | null => {
+  const raw = String(fd.get(k) ?? '').replace(/,/g, '').trim();
+  if (raw === '') return null;
+  const v = parseFloat(raw);
+  return isNaN(v) ? null : v;
+};
+
+function readClient(fd: FormData): Partial<Client> {
+  return {
     name: s(fd, 'name') || 'Untitled Client',
     status: (s(fd, 'status') || 'prospective') as Client['status'],
+    sales_stage: (s(fd, 'sales_stage') || 'untouched') as Client['sales_stage'],
     email: sOrNull(fd, 'email'),
     phone: sOrNull(fd, 'phone'),
     address: sOrNull(fd, 'address'),
     gst_number: sOrNull(fd, 'gst_number'),
     currency: s(fd, 'currency') || 'INR',
     notes: sOrNull(fd, 'notes'),
-  });
+    category: sOrNull(fd, 'category') as Client['category'],
+    segment: sOrNull(fd, 'segment') as Client['segment'],
+    website: sOrNull(fd, 'website'),
+    total_campuses: intOrNull(fd, 'total_campuses'),
+    locations: sOrNull(fd, 'locations'),
+    student_strength: intOrNull(fd, 'student_strength'),
+    faculty_strength: intOrNull(fd, 'faculty_strength'),
+    nirf: s(fd, 'nirf') === '1' ? 1 : 0,
+    nirf_category: sOrNull(fd, 'nirf_category'),
+    nirf_rank: intOrNull(fd, 'nirf_rank'),
+    qs_ranking: s(fd, 'qs_ranking') === '1' ? 1 : 0,
+    qs_details: sOrNull(fd, 'qs_details'),
+    source: sOrNull(fd, 'source'),
+    projected_value: numOrNull(fd, 'projected_value'),
+    expected_close: sOrNull(fd, 'expected_close'),
+    engagement_started: sOrNull(fd, 'engagement_started'),
+    issues: sOrNull(fd, 'issues'),
+  };
+}
+
+function readContacts(fd: FormData): Partial<Contact>[] {
+  const z = zip(fd, ['contact_role', 'contact_name', 'contact_email', 'contact_phone', 'contact_location', 'contact_linkedin']);
+  return z.contact_role.map((role, i) => ({
+    role: (role || 'other') as Contact['role'],
+    name: z.contact_name[i] || null,
+    email: z.contact_email[i] || null,
+    phone: z.contact_phone[i] || null,
+    location: z.contact_location[i] || null,
+    linkedin: z.contact_linkedin[i] || null,
+  }));
+}
+
+export async function createClientAction(fd: FormData): Promise<void> {
+  const id = repo.createClient(readClient(fd));
+  repo.replaceContacts(id, readContacts(fd));
   revalidatePath('/clients');
   revalidatePath('/');
+  revalidatePath('/pipeline');
   redirect(`/clients/${id}`);
 }
 
 export async function updateClientAction(fd: FormData): Promise<void> {
   const id = Number(s(fd, 'id'));
-  repo.updateClient(id, {
-    name: s(fd, 'name'),
-    status: s(fd, 'status') as Client['status'],
-    email: sOrNull(fd, 'email'),
-    phone: sOrNull(fd, 'phone'),
-    address: sOrNull(fd, 'address'),
-    gst_number: sOrNull(fd, 'gst_number'),
-    currency: s(fd, 'currency') || 'INR',
-    notes: sOrNull(fd, 'notes'),
-  });
+  repo.updateClient(id, readClient(fd));
+  repo.replaceContacts(id, readContacts(fd));
   revalidatePath('/clients');
   revalidatePath(`/clients/${id}`);
+  revalidatePath('/pipeline');
   redirect(`/clients/${id}`);
+}
+
+// ---- Activities, pipeline, approvals ----
+export async function addActivityAction(fd: FormData): Promise<void> {
+  const clientId = Number(s(fd, 'client_id'));
+  const upload = await saveUpload(fd.get('file') as File, 'activity');
+  repo.logActivity(
+    clientId,
+    (s(fd, 'kind') || 'note') as Activity['kind'],
+    s(fd, 'title') || 'Note',
+    sOrNull(fd, 'body'),
+    null,
+    sOrNull(fd, 'occurred_at') ?? undefined,
+    upload ? { file: upload.file, name: upload.name } : null,
+  );
+  revalidatePath(`/clients/${clientId}`);
+  revalidatePath('/');
+}
+
+export async function deleteActivityAction(fd: FormData): Promise<void> {
+  const clientId = Number(s(fd, 'client_id'));
+  repo.deleteActivity(Number(s(fd, 'id')));
+  revalidatePath(`/clients/${clientId}`);
+}
+
+export async function setStageAction(fd: FormData): Promise<void> {
+  const clientId = Number(s(fd, 'client_id'));
+  repo.setSalesStage(clientId, (s(fd, 'stage') || 'untouched') as Client['sales_stage']);
+  revalidatePath('/pipeline');
+  revalidatePath('/');
+  revalidatePath(`/clients/${clientId}`);
+  revalidatePath('/clients');
+}
+
+export async function createApprovalAction(fd: FormData): Promise<void> {
+  repo.createApproval({
+    title: s(fd, 'title') || 'Approval',
+    detail: sOrNull(fd, 'detail'),
+    kind: (s(fd, 'kind') || 'other') as Approval['kind'],
+    client_id: intOrNull(fd, 'client_id'),
+    amount: numOrNull(fd, 'amount'),
+    currency: sOrNull(fd, 'currency'),
+  });
+  revalidatePath('/');
+  revalidatePath('/approvals');
+}
+
+export async function decideApprovalAction(fd: FormData): Promise<void> {
+  const status: Approval['status'] = s(fd, 'status') === 'approved' ? 'approved' : 'rejected';
+  repo.decideApproval(Number(s(fd, 'id')), status, s(fd, 'note'));
+  revalidatePath('/');
+  revalidatePath('/approvals');
+}
+
+export async function deleteApprovalAction(fd: FormData): Promise<void> {
+  repo.deleteApproval(Number(s(fd, 'id')));
+  revalidatePath('/');
+  revalidatePath('/approvals');
 }
 
 export async function deleteClientAction(fd: FormData): Promise<void> {

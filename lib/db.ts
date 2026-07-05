@@ -92,12 +92,63 @@ CREATE TABLE IF NOT EXISTS settings (
   value TEXT
 );
 
+-- CRM: contacts attached to a client (POC / Promoter / Accounts / other)
+CREATE TABLE IF NOT EXISTS contacts (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  client_id   INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  role        TEXT NOT NULL DEFAULT 'poc',
+  name        TEXT,
+  email       TEXT,
+  phone       TEXT,
+  location    TEXT,
+  linkedin    TEXT,
+  sort        INTEGER NOT NULL DEFAULT 0,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- CRM: engagement / communications timeline
+CREATE TABLE IF NOT EXISTS activities (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  client_id   INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  kind        TEXT NOT NULL DEFAULT 'note',
+  title       TEXT,
+  body        TEXT,
+  occurred_at TEXT NOT NULL DEFAULT (datetime('now')),
+  file        TEXT,
+  file_name   TEXT,
+  meta        TEXT,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Approvals raised for sign-off (proposals, discounts, invoices, …)
+CREATE TABLE IF NOT EXISTS approvals (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  title         TEXT NOT NULL,
+  detail        TEXT,
+  kind          TEXT NOT NULL DEFAULT 'other',
+  client_id     INTEGER REFERENCES clients(id) ON DELETE SET NULL,
+  contract_id   INTEGER,
+  invoice_id    INTEGER,
+  amount        REAL,
+  currency      TEXT,
+  status        TEXT NOT NULL DEFAULT 'pending',
+  requested_by  TEXT,
+  decided_by    TEXT,
+  decided_at    TEXT,
+  decision_note TEXT,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_contracts_client ON contracts(client_id);
 CREATE INDEX IF NOT EXISTS idx_invoices_contract ON invoices(contract_id);
 CREATE INDEX IF NOT EXISTS idx_invoices_client ON invoices(client_id);
 CREATE INDEX IF NOT EXISTS idx_invoices_issue ON invoices(issue_date);
 CREATE INDEX IF NOT EXISTS idx_items_contract ON contract_items(contract_id);
 CREATE INDEX IF NOT EXISTS idx_invitems_invoice ON invoice_items(invoice_id);
+CREATE INDEX IF NOT EXISTS idx_contacts_client ON contacts(client_id);
+CREATE INDEX IF NOT EXISTS idx_activities_client ON activities(client_id);
+CREATE INDEX IF NOT EXISTS idx_activities_when ON activities(occurred_at);
+CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals(status);
 `;
 
 const DEFAULT_SETTINGS: Record<string, string> = {
@@ -136,6 +187,26 @@ function init(): DatabaseSync {
   ensureColumn(db, 'invoices', 'template', "template TEXT NOT NULL DEFAULT 'classic'");
   ensureColumn(db, 'invoices', 'payment_proof', 'payment_proof TEXT');
   ensureColumn(db, 'invoices', 'template_mode', "template_mode TEXT NOT NULL DEFAULT 'light'");
+
+  // CRM / sales fields on clients
+  ensureColumn(db, 'clients', 'sales_stage', "sales_stage TEXT NOT NULL DEFAULT 'untouched'");
+  ensureColumn(db, 'clients', 'category', 'category TEXT');          // government | private
+  ensureColumn(db, 'clients', 'segment', 'segment TEXT');            // university | college | edtech | k12
+  ensureColumn(db, 'clients', 'website', 'website TEXT');
+  ensureColumn(db, 'clients', 'total_campuses', 'total_campuses INTEGER');
+  ensureColumn(db, 'clients', 'locations', 'locations TEXT');
+  ensureColumn(db, 'clients', 'student_strength', 'student_strength INTEGER');
+  ensureColumn(db, 'clients', 'faculty_strength', 'faculty_strength INTEGER');
+  ensureColumn(db, 'clients', 'nirf', 'nirf INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'clients', 'nirf_category', 'nirf_category TEXT');
+  ensureColumn(db, 'clients', 'nirf_rank', 'nirf_rank INTEGER');
+  ensureColumn(db, 'clients', 'qs_ranking', 'qs_ranking INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'clients', 'qs_details', 'qs_details TEXT');
+  ensureColumn(db, 'clients', 'source', 'source TEXT');
+  ensureColumn(db, 'clients', 'projected_value', 'projected_value REAL');
+  ensureColumn(db, 'clients', 'expected_close', 'expected_close TEXT');
+  ensureColumn(db, 'clients', 'engagement_started', 'engagement_started TEXT');
+  ensureColumn(db, 'clients', 'issues', 'issues TEXT');
 
   const upsert = db.prepare('INSERT OR IGNORE INTO settings(key, value) VALUES(?, ?)');
   for (const [k, v] of Object.entries(DEFAULT_SETTINGS)) upsert.run(k, v);

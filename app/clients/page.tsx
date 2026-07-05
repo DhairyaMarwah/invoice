@@ -1,11 +1,11 @@
 import Link from 'next/link';
-import { listClients, clientStatusCounts } from '@/lib/repo';
-import { PageHeader, EmptyState, ClientStatusPill } from '@/components/ui';
+import { listClients, clientStageCounts } from '@/lib/repo';
+import { PageHeader, EmptyState, SalesStagePill, SegmentPill } from '@/components/ui';
 import { FilterBar } from '@/components/FilterBar';
 import { RowLink } from '@/components/RowLink';
 import { StatCard } from '@/components/Charts';
-import { money, initials, CLIENT_STATUS } from '@/lib/format';
-import type { ClientStatus } from '@/lib/types';
+import { money, initials, fmtRelative, SALES_STAGE, SALES_STAGE_ORDER, CLIENT_SEGMENT } from '@/lib/format';
+import type { ClientSegment } from '@/lib/types';
 import { IconPlus, IconClients } from '@/components/icons';
 
 export const dynamic = 'force-dynamic';
@@ -13,83 +13,77 @@ export const dynamic = 'force-dynamic';
 export default async function ClientsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; q?: string }>;
+  searchParams: Promise<{ status?: string; stage?: string; segment?: string; q?: string }>;
 }) {
   const sp = await searchParams;
-  const clients = listClients({ status: sp.status, q: sp.q });
-  const mix = clientStatusCounts();
+  // The segmented filter drives sales stage; `status` param name is reused for it.
+  const clients = listClients({ stage: sp.status, segment: sp.segment, q: sp.q });
+  const mix = clientStageCounts();
   const total = Object.values(mix).reduce((a, b) => a + b, 0);
 
   const segments = [
     { value: 'all', label: 'All', count: total },
-    ...(Object.keys(CLIENT_STATUS) as ClientStatus[]).map((k) => ({
-      value: k,
-      label: CLIENT_STATUS[k].label,
-      count: mix[k] ?? 0,
-    })),
+    ...SALES_STAGE_ORDER.map((k) => ({ value: k, label: SALES_STAGE[k].short, count: mix[k] ?? 0 })),
+  ];
+  const selects = [
+    { key: 'segment', label: 'Type', options: [{ value: 'all', label: 'All types' }, ...(Object.keys(CLIENT_SEGMENT) as ClientSegment[]).map((k) => ({ value: k, label: CLIENT_SEGMENT[k].label }))] },
   ];
 
   return (
     <div>
       <PageHeader
         title="Clients"
-        subtitle="Every account, its contracts, and what it owes"
-        actions={
-          <Link href="/clients/new" className="btn btn-primary focus-ring">
-            <IconPlus width={15} height={15} /> New Client
-          </Link>
-        }
+        subtitle="Every account — pipeline stage, engagement, and what it owes"
+        actions={<Link href="/clients/new" className="btn btn-primary focus-ring"><IconPlus width={15} height={15} /> New Client</Link>}
       />
       <div className="mx-auto max-w-[1200px] px-5 py-5">
-        <div className="mb-4">
-          <FilterBar searchPlaceholder="Search clients…" segments={segments} />
-        </div>
+        <div className="mb-4"><FilterBar searchPlaceholder="Search clients…" segments={segments} selects={selects} /></div>
 
         {clients.length === 0 ? (
           <EmptyState
             icon={<IconClients width={22} height={22} />}
-            title={sp.q || sp.status ? 'No clients match' : 'No clients yet'}
-            hint={sp.q || sp.status ? 'Try clearing the filters or search.' : 'Add your first client to start housing contracts and invoices under it.'}
+            title={sp.q || sp.status || sp.segment ? 'No clients match' : 'No clients yet'}
+            hint={sp.q || sp.status || sp.segment ? 'Try clearing the filters or search.' : 'Add your first client to start tracking the engagement, contracts, and invoices.'}
             action={<Link href="/clients/new" className="btn btn-primary focus-ring"><IconPlus width={15} height={15} /> New Client</Link>}
           />
         ) : (
           <div className="rise">
-          <StatCard icon={<IconClients width={12} height={12} />} label={`Clients · ${clients.length}`}>
-            <table className="tbl">
-              <thead>
-                <tr>
-                  <th>Client</th>
-                  <th>Status</th>
-                  <th className="text-right">Contracts</th>
-                  <th className="text-right">Invoiced</th>
-                  <th className="text-right">Collected</th>
-                  <th className="text-right">Outstanding</th>
-                </tr>
-              </thead>
-              <tbody>
-                {clients.map((c) => (
-                  <RowLink key={c.id} href={`/clients/${c.id}`}>
-                    <td>
-                      <Link href={`/clients/${c.id}`} className="flex items-center gap-3">
-                        <span className="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-panel-2 text-[11px] font-semibold text-muted" style={{ boxShadow: 'inset 0 0 0 1px var(--border)' }}>
-                          {initials(c.name)}
+            <StatCard icon={<IconClients width={12} height={12} />} label={`Clients · ${clients.length}`}>
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th>Client</th>
+                    <th>Stage</th>
+                    <th>Type</th>
+                    <th>Source</th>
+                    <th>Last activity</th>
+                    <th className="text-right">Projected</th>
+                    <th className="text-right">Outstanding</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {clients.map((c) => (
+                    <RowLink key={c.id} href={`/clients/${c.id}`}>
+                      <td>
+                        <span className="flex items-center gap-3">
+                          <span className="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-panel-2 text-[11px] font-semibold text-muted" style={{ boxShadow: 'inset 0 0 0 1px var(--border)' }}>{initials(c.name)}</span>
+                          <span className="min-w-0">
+                            <span className="block truncate font-medium text-fg">{c.name}</span>
+                            {c.locations && <span className="block truncate text-[12px] text-faint">{c.locations}</span>}
+                          </span>
                         </span>
-                        <span className="min-w-0">
-                          <span className="block truncate font-medium text-fg">{c.name}</span>
-                          {c.email && <span className="block truncate text-[12px] text-faint">{c.email}</span>}
-                        </span>
-                      </Link>
-                    </td>
-                    <td><ClientStatusPill status={c.status} /></td>
-                    <td className="num text-right text-muted">{c.contract_count}</td>
-                    <td className="num text-right">{money(c.invoiced, c.currency)}</td>
-                    <td className="num text-right text-[var(--ok-text)]">{money(c.collected, c.currency)}</td>
-                    <td className="num text-right font-medium">{c.outstanding > 0 ? money(c.outstanding, c.currency) : <span className="text-faint">—</span>}</td>
-                  </RowLink>
-                ))}
-              </tbody>
-            </table>
-          </StatCard>
+                      </td>
+                      <td><SalesStagePill stage={c.sales_stage} short /></td>
+                      <td>{c.segment ? <SegmentPill segment={c.segment} /> : <span className="text-faint">—</span>}</td>
+                      <td className="text-[12.5px] text-muted">{c.source || <span className="text-faint">—</span>}</td>
+                      <td className="text-[12px] text-faint">{c.last_activity_at ? fmtRelative(c.last_activity_at) : '—'}</td>
+                      <td className="num text-right">{c.projected_value != null ? money(c.projected_value, c.currency) : <span className="text-faint">—</span>}</td>
+                      <td className="num text-right font-medium">{c.outstanding > 0 ? money(c.outstanding, c.currency) : <span className="text-faint">—</span>}</td>
+                    </RowLink>
+                  ))}
+                </tbody>
+              </table>
+            </StatCard>
           </div>
         )}
       </div>

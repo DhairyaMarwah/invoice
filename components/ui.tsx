@@ -4,8 +4,10 @@ import {
   CLIENT_STATUS,
   CONTRACT_STATUS,
   invoiceTone,
+  SALES_STAGE,
+  CLIENT_SEGMENT,
 } from '@/lib/format';
-import type { ClientStatus, ContractStatus, InvoiceStatus } from '@/lib/types';
+import type { ClientStatus, ContractStatus, InvoiceStatus, SalesStage, ClientSegment } from '@/lib/types';
 
 type Tone = 'ok' | 'warn' | 'bad' | 'info' | 'neu' | 'pur';
 
@@ -36,6 +38,18 @@ export function ContractStatusPill({ status }: { status: ContractStatus }) {
 export function InvoiceStatusPill({ status, dueDate }: { status: InvoiceStatus; dueDate: string | null }) {
   const s = invoiceTone(status, dueDate);
   return <Pill tone={s.tone}>{s.label}</Pill>;
+}
+
+export function SalesStagePill({ stage, short = false }: { stage: SalesStage; short?: boolean }) {
+  const s = SALES_STAGE[stage] ?? SALES_STAGE.untouched;
+  return <Pill tone={s.tone}>{short ? s.short : s.label}</Pill>;
+}
+
+export function SegmentPill({ segment }: { segment: ClientSegment | null }) {
+  if (!segment) return null;
+  const s = CLIENT_SEGMENT[segment];
+  if (!s) return null;
+  return <Pill tone={s.tone} dot={false}>{s.label}</Pill>;
 }
 
 export interface Crumb {

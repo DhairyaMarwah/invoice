@@ -11,6 +11,8 @@ import {
   IconReports,
   IconSettings,
   IconPlus,
+  IconPipeline,
+  IconApproval,
 } from './icons';
 import { ThemeToggle } from './ThemeToggle';
 
@@ -18,13 +20,16 @@ interface NavCounts {
   clients: number;
   contracts: number;
   invoices: number;
+  pendingApprovals: number;
 }
 
 const NAV = [
-  { href: '/', label: 'Overview', Icon: IconOverview, key: null },
+  { href: '/', label: 'Business Central', Icon: IconOverview, key: null },
+  { href: '/pipeline', label: 'Pipeline', Icon: IconPipeline, key: null },
   { href: '/clients', label: 'Clients', Icon: IconClients, key: 'clients' as const },
   { href: '/contracts', label: 'Contracts', Icon: IconContracts, key: 'contracts' as const },
   { href: '/invoices', label: 'Invoices', Icon: IconInvoices, key: 'invoices' as const },
+  { href: '/approvals', label: 'Approvals', Icon: IconApproval, key: 'pendingApprovals' as const },
   { href: '/reports', label: 'Reports', Icon: IconReports, key: null },
 ];
 
@@ -69,7 +74,9 @@ export function Sidebar({ counts, org }: { counts: NavCounts; org: string }) {
           <Link key={href} href={href} className={`nav-item focus-ring ${isActive(href) ? 'active' : ''}`} aria-current={isActive(href) ? 'page' : undefined}>
             <Icon width={15} height={15} />
             <span>{label}</span>
-            {key && <span className="nav-count">{counts[key]}</span>}
+            {key && counts[key] > 0 && (
+              <span className={`nav-count ${key === 'pendingApprovals' ? 'tone-warn rounded-full !px-1.5' : ''}`} style={key === 'pendingApprovals' ? { background: 'var(--warn-bg)', color: 'var(--warn-text)' } : undefined}>{counts[key]}</span>
+            )}
           </Link>
         ))}
       </nav>

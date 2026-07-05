@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation';
-import { getClient } from '@/lib/repo';
+import { getClient, contactsByClient } from '@/lib/repo';
 import { PageHeader } from '@/components/ui';
 import { ClientForm } from '@/components/forms/ClientForm';
 
@@ -7,6 +7,7 @@ export default async function EditClientPage({ params }: { params: Promise<{ id:
   const { id } = await params;
   const client = getClient(Number(id));
   if (!client) notFound();
+  const contacts = contactsByClient(client.id);
 
   return (
     <div>
@@ -14,9 +15,9 @@ export default async function EditClientPage({ params }: { params: Promise<{ id:
         title={`Edit ${client.name}`}
         crumbs={[{ href: '/clients', label: 'Clients' }, { href: `/clients/${client.id}`, label: client.name }, { label: 'Edit' }]}
       />
-      <div className="mx-auto max-w-[720px] px-5 py-5">
+      <div className="mx-auto max-w-[820px] px-5 py-5">
         <div className="rise">
-          <ClientForm client={client} />
+          <ClientForm client={client} contacts={contacts} />
         </div>
       </div>
     </div>
