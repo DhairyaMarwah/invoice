@@ -144,6 +144,13 @@ export function annualized(amount: number, cycle: BillingCycle): number {
   }
 }
 
+/** Resolve a stored upload key to a URL: absolute (Blob) as-is, else the file route. */
+export function fileUrl(key: string | null | undefined): string | null {
+  if (!key) return null;
+  if (/^https?:\/\//.test(key) || key.startsWith('/') || key.startsWith('data:')) return key;
+  return `/api/files/${key}`;
+}
+
 export function initials(name: string): string {
   return name
     .split(/\s+/)

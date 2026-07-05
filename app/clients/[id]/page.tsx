@@ -40,13 +40,15 @@ export const dynamic = 'force-dynamic';
 
 export default async function ClientDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const client = getClient(Number(id));
+  const client = await getClient(Number(id));
   if (!client) notFound();
 
-  const contacts = contactsByClient(client.id);
-  const activities = activitiesByClient(client.id);
-  const contracts = contractsByClient(client.id);
-  const allInvoices = invoicesByClient(client.id);
+  const contacts = await contactsByClient(client.id);
+  const activities = await activitiesByClient(client.id);
+  const contracts = await contractsByClient(client.id);
+  const invByContract = new Map<number, Awaited<ReturnType<typeof invoicesByContract>>>();
+  for (const ct of contracts) invByContract.set(ct.id, await invoicesByContract(ct.id));
+  const allInvoices = await invoicesByClient(client.id);
   const invoiced = allInvoices.reduce((s, i) => s + i.total, 0);
   const collected = allInvoices.filter((i) => i.status === 'paid').reduce((s, i) => s + i.total, 0);
   const cur = client.currency || 'INR';
@@ -129,7 +131,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
               ) : (
                 <div className="flex flex-col gap-3">
                   {contracts.map((ct) => {
-                    const invs = invoicesByContract(ct.id);
+                    const invs = invByContract.get(ct.id) ?? [];
                     const cat = productCategory(ct.product);
                     return (
                       <StatCard

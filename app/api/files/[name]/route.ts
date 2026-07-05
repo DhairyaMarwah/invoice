@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import fs from 'node:fs';
 import path from 'node:path';
-import { UPLOAD_DIR } from '@/lib/db';
+import { UPLOAD_DIR } from '@/lib/storage';
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ name: string }> }) {
   const { name } = await params;

@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation';
 import { getContract, getClient, getSettings, peekInvoiceNumber } from '@/lib/repo';
 import { PageHeader } from '@/components/ui';
 import { InvoiceForm, type InvoiceDefaults } from '@/components/forms/InvoiceForm';
-import { todayISO, addDays, BILLING_CYCLE } from '@/lib/format';
+import { todayISO, addDays, BILLING_CYCLE, fileUrl } from '@/lib/format';
 
 function periodEnd(start: string, cycle: string): string {
   const d = new Date(start + 'T00:00:00');
@@ -16,14 +16,14 @@ function periodEnd(start: string, cycle: string): string {
 
 export default async function NewInvoicePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const ct = getContract(Number(id));
+  const ct = await getContract(Number(id));
   if (!ct) notFound();
-  const client = getClient(ct.client_id)!;
-  const s = getSettings();
+  const client = (await getClient(ct.client_id))!;
+  const s = await getSettings();
 
   const issue = todayISO();
   const defaults: InvoiceDefaults = {
-    invoice_number: peekInvoiceNumber(issue),
+    invoice_number: await peekInvoiceNumber(issue),
     issue_date: issue,
     due_date: addDays(issue, parseInt(s.invoice_due_days || '15', 10) || 15),
     period_start: ct.billing_cycle === 'one_time' ? '' : issue,
@@ -57,7 +57,7 @@ export default async function NewInvoicePage({ params }: { params: Promise<{ id:
             clientId={ct.client_id}
             contractTitle={ct.title}
             clientName={ct.client_name}
-            org={{ name: s.org_name, tagline: s.org_tagline, address: s.org_address, gstin: s.org_gstin, email: s.org_email, phone: s.org_phone, logoUrl: s.org_logo ? `/api/files/${s.org_logo}` : null }}
+            org={{ name: s.org_name, tagline: s.org_tagline, address: s.org_address, gstin: s.org_gstin, email: s.org_email, phone: s.org_phone, logoUrl: fileUrl(s.org_logo) }}
             contract={{ title: ct.title, amount: ct.amount, billing_cycle: ct.billing_cycle, tax_rate: ct.tax_rate }}
             defaults={defaults}
             bumpSeq

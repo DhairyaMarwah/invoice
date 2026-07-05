@@ -17,8 +17,8 @@ export default async function ClientsPage({
 }) {
   const sp = await searchParams;
   // The segmented filter drives sales stage; `status` param name is reused for it.
-  const clients = listClients({ stage: sp.status, segment: sp.segment, q: sp.q });
-  const mix = clientStageCounts();
+  const clients = await listClients({ stage: sp.status, segment: sp.segment, q: sp.q });
+  const mix = await clientStageCounts();
   const total = Object.values(mix).reduce((a, b) => a + b, 0);
 
   const segments = [

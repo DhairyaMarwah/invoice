@@ -7,8 +7,8 @@ export const dynamic = 'force-dynamic';
 
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ saved?: string }> }) {
   const sp = await searchParams;
-  const settings = getSettings();
-  const accounts = getAccounts();
+  const settings = await getSettings();
+  const accounts = await getAccounts();
 
   return (
     <div>

@@ -1,6 +1,6 @@
 import { deleteActivityAction } from '@/app/actions';
 import { ConfirmForm } from '@/components/ConfirmForm';
-import { ACTIVITY_KIND, fmtDate, fmtRelative, money } from '@/lib/format';
+import { ACTIVITY_KIND, fmtDate, fmtRelative, money, fileUrl } from '@/lib/format';
 import type { Activity } from '@/lib/types';
 import {
   IconFile, IconPhone, IconMail, IconClients, IconContracts, IconInvoices,
@@ -58,7 +58,7 @@ export function ActivityTimeline({ activities }: { activities: Activity[] }) {
                 <p className="num t-small mt-0.5 text-faint">{money(m.total, m.currency || 'INR')}</p>
               )}
               {a.file && (
-                <a href={`/api/files/${a.file}`} target="_blank" rel="noreferrer" className="link t-small mt-1 inline-flex items-center gap-1">
+                <a href={fileUrl(a.file)!} target="_blank" rel="noreferrer" className="link t-small mt-1 inline-flex items-center gap-1">
                   <IconFile width={12} height={12} /> {a.file_name || 'Attachment'} <IconExternal width={11} height={11} />
                 </a>
               )}

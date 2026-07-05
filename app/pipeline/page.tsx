@@ -8,10 +8,10 @@ import { IconPlus, IconClients } from '@/components/icons';
 
 export const dynamic = 'force-dynamic';
 
-export default function PipelinePage() {
-  const cur = getSettings().default_currency || 'INR';
-  const clients = pipelineClients();
-  const funnel = pipelineFunnel();
+export default async function PipelinePage() {
+  const cur = (await getSettings()).default_currency || 'INR';
+  const clients = await pipelineClients();
+  const funnel = await pipelineFunnel();
   const openProjected = funnel
     .filter((f) => SALES_STAGE[f.stage]?.open)
     .reduce((s, f) => s + f.projected, 0);

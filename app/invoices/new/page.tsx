@@ -6,8 +6,8 @@ import { IconArrowRight, IconInvoices } from '@/components/icons';
 
 export const dynamic = 'force-dynamic';
 
-export default function PickContractPage() {
-  const contracts = listContracts();
+export default async function PickContractPage() {
+  const contracts = await listContracts();
 
   return (
     <div>

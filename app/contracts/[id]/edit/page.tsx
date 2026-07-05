@@ -5,9 +5,9 @@ import { ContractForm } from '@/components/forms/ContractForm';
 
 export default async function EditContractPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const ct = getContract(Number(id));
+  const ct = await getContract(Number(id));
   if (!ct) notFound();
-  const items = itemsByContract(ct.id);
+  const items = await itemsByContract(ct.id);
 
   return (
     <div>

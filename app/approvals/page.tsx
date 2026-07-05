@@ -16,9 +16,9 @@ const TABS: { key: ApprovalStatus; label: string }[] = [
 export default async function ApprovalsPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   const sp = await searchParams;
   const tab = (TABS.find((t) => t.key === sp.tab)?.key ?? 'pending') as ApprovalStatus;
-  const counts = approvalCounts();
-  const approvals = listApprovals(tab);
-  const clients = listClients().map((c) => ({ id: c.id, name: c.name }));
+  const counts = await approvalCounts();
+  const approvals = await listApprovals(tab);
+  const clients = (await listClients()).map((c) => ({ id: c.id, name: c.name }));
 
   return (
     <div>

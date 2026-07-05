@@ -8,7 +8,7 @@ import { PrintButton } from '@/components/PrintButton';
 import { MarkPaidForm } from '@/components/forms/MarkPaidForm';
 import { A4Frame } from '@/components/invoice/A4Frame';
 import { InvoiceSheet } from '@/components/invoice/InvoiceSheet';
-import { money, fmtDate, todayISO, PAYMENT_METHOD, daysUntil } from '@/lib/format';
+import { money, fmtDate, todayISO, PAYMENT_METHOD, daysUntil, fileUrl } from '@/lib/format';
 import type { PaymentMethod } from '@/lib/types';
 import { IconEdit, IconTrash, IconClock } from '@/components/icons';
 
@@ -16,11 +16,11 @@ export const dynamic = 'force-dynamic';
 
 export default async function InvoiceDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const iv = getInvoice(Number(id));
+  const iv = await getInvoice(Number(id));
   if (!iv) notFound();
-  const items = itemsByInvoice(iv.id);
-  const s = getSettings();
-  const accounts = getAccounts();
+  const items = await itemsByInvoice(iv.id);
+  const s = await getSettings();
+  const accounts = await getAccounts();
   const paid = iv.status === 'paid';
   const overdue = !paid && iv.due_date && (daysUntil(iv.due_date) ?? 0) < 0;
 
@@ -47,7 +47,7 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
               <InvoiceSheet
                 template={iv.template}
                 mode={iv.template_mode}
-                org={{ name: s.org_name, tagline: s.org_tagline, address: s.org_address, gstin: s.org_gstin, email: s.org_email, phone: s.org_phone, logoUrl: s.org_logo ? `/api/files/${s.org_logo}` : null }}
+                org={{ name: s.org_name, tagline: s.org_tagline, address: s.org_address, gstin: s.org_gstin, email: s.org_email, phone: s.org_phone, logoUrl: fileUrl(s.org_logo) }}
                 invoiceNumber={iv.invoice_number}
                 issueDate={iv.issue_date}
                 dueDate={iv.due_date}
@@ -81,7 +81,7 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
                     {iv.transaction_ref && <Detail label="Transaction"><span className="num" style={{ fontFamily: 'var(--font-mono)' }}>{iv.transaction_ref}</span></Detail>}
                     {iv.payment_proof && (
                       <Detail label="Proof">
-                        <a href={`/api/files/${iv.payment_proof}`} target="_blank" rel="noreferrer" className="link">View transaction proof ↗</a>
+                        <a href={fileUrl(iv.payment_proof)!} target="_blank" rel="noreferrer" className="link">View transaction proof ↗</a>
                       </Detail>
                     )}
                   </dl>

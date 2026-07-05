@@ -3,14 +3,14 @@
 import { useState } from 'react';
 import { updateSettingsAction } from '@/app/actions';
 import { SubmitButton } from '@/components/SubmitButton';
-import { CURRENCIES } from '@/lib/format';
+import { CURRENCIES, fileUrl } from '@/lib/format';
 import type { Account, Settings } from '@/lib/types';
 import { IconPlus, IconTrash } from '@/components/icons';
 
 export function SettingsForm({ settings, accounts }: { settings: Settings; accounts: Account[] }) {
   const [rows, setRows] = useState<Account[]>(accounts.length ? accounts : [{ label: '', details: '' }]);
   const setRow = (i: number, k: keyof Account, v: string) => setRows((p) => p.map((x, j) => (j === i ? { ...x, [k]: v } : x)));
-  const [logoPreview, setLogoPreview] = useState<string | null>(settings.org_logo ? `/api/files/${settings.org_logo}` : null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(fileUrl(settings.org_logo));
   const [removeLogo, setRemoveLogo] = useState(false);
 
   return (

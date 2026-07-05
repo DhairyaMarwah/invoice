@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRef, useState, useTransition } from 'react';
 import { createContractAction, updateContractAction, extractContractAction } from '@/app/actions';
 import { SubmitButton } from '@/components/SubmitButton';
-import { CONTRACT_STATUS, BILLING_CYCLE, CURRENCIES } from '@/lib/format';
+import { CONTRACT_STATUS, BILLING_CYCLE, CURRENCIES, fileUrl } from '@/lib/format';
 import { PRODUCT_CATEGORIES } from '@/lib/products';
 import type { Contract, ContractItem, BillingCycle, ContractStatus } from '@/lib/types';
 import { IconPlus, IconTrash, IconSparkle, IconFile, IconCheck } from '@/components/icons';
@@ -114,7 +114,7 @@ export function ContractForm({
         </div>
 
         {editing && contract?.pdf_file && (
-          <a href={`/api/files/${contract.pdf_file}`} target="_blank" rel="noreferrer" className="link t-small mt-3 inline-block">
+          <a href={fileUrl(contract.pdf_file)!} target="_blank" rel="noreferrer" className="link t-small mt-3 inline-block">
             View current PDF ↗
           </a>
         )}

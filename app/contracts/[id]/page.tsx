@@ -10,18 +10,18 @@ import {
   Section,
 } from '@/components/ui';
 import { ConfirmForm } from '@/components/ConfirmForm';
-import { money, fmtDate, daysUntil, BILLING_CYCLE } from '@/lib/format';
+import { money, fmtDate, daysUntil, BILLING_CYCLE, fileUrl } from '@/lib/format';
 import { IconPlus, IconEdit, IconTrash, IconFile, IconExternal } from '@/components/icons';
 
 export const dynamic = 'force-dynamic';
 
 export default async function ContractDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const ct = getContract(Number(id));
+  const ct = await getContract(Number(id));
   if (!ct) notFound();
 
-  const items = itemsByContract(ct.id);
-  const invoices = invoicesByContract(ct.id);
+  const items = await itemsByContract(ct.id);
+  const invoices = await invoicesByContract(ct.id);
   const collected = invoices.filter((i) => i.status === 'paid').reduce((s, i) => s + i.total, 0);
   const invoiced = invoices.reduce((s, i) => s + i.total, 0);
   const daysLeft = daysUntil(ct.end_date);
@@ -49,9 +49,9 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
               <div className="card overflow-hidden">
                 <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-2.5">
                   <span className="flex items-center gap-2 text-[13px] font-medium"><IconFile width={15} height={15} className="text-faint" /> {ct.pdf_name}</span>
-                  <a href={`/api/files/${ct.pdf_file}`} target="_blank" rel="noreferrer" className="link t-small flex items-center gap-1">Open <IconExternal width={13} height={13} /></a>
+                  <a href={fileUrl(ct.pdf_file)!} target="_blank" rel="noreferrer" className="link t-small flex items-center gap-1">Open <IconExternal width={13} height={13} /></a>
                 </div>
-                <iframe src={`/api/files/${ct.pdf_file}#toolbar=0`} className="h-[460px] w-full bg-panel-2" title="Contract PDF" />
+                <iframe src={fileUrl(ct.pdf_file)! + "#toolbar=0"} className="h-[460px] w-full bg-panel-2" title="Contract PDF" />
               </div>
             ) : (
               <p className="t-small rounded-md border border-dashed border-border-strong px-4 py-8 text-center text-faint">

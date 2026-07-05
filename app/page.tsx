@@ -21,23 +21,23 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 const CAT_COLOR: Record<string, string> = { pegasus: 'var(--info-solid)', iris: 'var(--pur-solid)', atlas: 'var(--warn-solid)', untagged: 'var(--neu-solid)' };
 const CAT_LABEL: Record<string, string> = { pegasus: 'Pegasus', iris: 'Iris', atlas: 'Atlas', untagged: 'Untagged' };
 
-export default function BusinessCentralPage() {
-  const c = counts();
-  const cur = getSettings().default_currency || 'INR';
+export default async function BusinessCentralPage() {
+  const c = await counts();
+  const cur = (await getSettings()).default_currency || 'INR';
   const year = String(new Date().getFullYear());
-  const yr = totals(year);
-  const all = totals();
-  const series = monthlySeries(12);
-  const deltas = monthDeltas();
-  const { arr } = recurringRevenue();
-  const byCat = revenueByCategory(year);
-  const recentInv = recentInvoices(5);
-  const expiring = expiringContracts(60);
-  const activity = recentActivities(8);
-  const funnel = pipelineFunnel();
-  const fups = followUps(6);
-  const appr = approvalCounts();
-  const pendingApprovals = listApprovals('pending').slice(0, 3);
+  const yr = await totals(year);
+  const all = await totals();
+  const series = await monthlySeries(12);
+  const deltas = await monthDeltas();
+  const { arr } = await recurringRevenue();
+  const byCat = await revenueByCategory(year);
+  const recentInv = await recentInvoices(5);
+  const expiring = await expiringContracts(60);
+  const activity = await recentActivities(8);
+  const funnel = await pipelineFunnel();
+  const fups = await followUps(6);
+  const appr = await approvalCounts();
+  const pendingApprovals = (await listApprovals('pending')).slice(0, 3);
   const thisMonthName = MONTHS[new Date().getMonth()].toUpperCase();
 
   const empty = c.clients === 0;

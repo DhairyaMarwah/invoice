@@ -5,7 +5,7 @@ import { ContractForm } from '@/components/forms/ContractForm';
 
 export default async function NewContractPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const client = getClient(Number(id));
+  const client = await getClient(Number(id));
   if (!client) notFound();
 
   return (

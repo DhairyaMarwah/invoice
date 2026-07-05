@@ -1,5 +1,5 @@
 import 'server-only';
-import { db } from './db';
+import { db, tx } from './db';
 import type {
   Account,
   Activity,
@@ -20,32 +20,13 @@ import { annualized } from './format';
 // Values SQLite accepts as bound parameters.
 type Bind = string | number | bigint | Uint8Array | null;
 
-// node:sqlite returns null-prototype row objects; spread to plain objects.
+// libSQL rows are plain objects already; clone so callers can mutate freely.
 const plain = <T>(row: unknown): T => ({ ...(row as object) }) as T;
 const plainAll = <T>(rows: unknown[]): T[] => rows.map((r) => plain<T>(r));
 
-// Reentrant: nested tx() calls join the outer transaction instead of issuing a
-// second BEGIN (node:sqlite has one connection, so a depth flag is safe).
-let inTx = false;
-function tx<T>(fn: () => T): T {
-  if (inTx) return fn();
-  db.exec('BEGIN');
-  inTx = true;
-  try {
-    const out = fn();
-    db.exec('COMMIT');
-    return out;
-  } catch (e) {
-    db.exec('ROLLBACK');
-    throw e;
-  } finally {
-    inTx = false;
-  }
-}
-
 // ---------------------------------------------------------------- Settings
-export function getSettings(): Settings {
-  const rows = db.prepare('SELECT key, value FROM settings').all() as {
+export async function getSettings(): Promise<Settings> {
+  const rows = (await db.prepare('SELECT key, value FROM settings').all()) as {
     key: string;
     value: string;
   }[];
@@ -54,18 +35,18 @@ export function getSettings(): Settings {
   return out as unknown as Settings;
 }
 
-export function updateSettings(patch: Record<string, string>): void {
+export async function updateSettings(patch: Record<string, string>): Promise<void> {
   const stmt = db.prepare(
     'INSERT INTO settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
   );
-  tx(() => {
-    for (const [k, v] of Object.entries(patch)) stmt.run(k, v ?? '');
+  await tx(async () => {
+    for (const [k, v] of Object.entries(patch)) await stmt.run(k, v ?? '');
   });
 }
 
-export function getAccounts(): Account[] {
+export async function getAccounts(): Promise<Account[]> {
   try {
-    const arr = JSON.parse(getSettings().accounts || '[]');
+    const arr = JSON.parse((await getSettings()).accounts || '[]');
     return Array.isArray(arr) ? arr : [];
   } catch {
     return [];
@@ -81,7 +62,7 @@ export interface ClientRow extends Client {
   last_activity_at: string | null;
 }
 
-export function listClients(opts: { status?: string; stage?: string; segment?: string; q?: string } = {}): ClientRow[] {
+export async function listClients(opts: { status?: string; stage?: string; segment?: string; q?: string } = {}): Promise<ClientRow[]> {
   const where: string[] = [];
   const args: Bind[] = [];
   if (opts.status && opts.status !== 'all') { where.push('c.status = ?'); args.push(opts.status); }
@@ -101,13 +82,13 @@ export function listClients(opts: { status?: string; stage?: string; segment?: s
     FROM clients c
     ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
     ORDER BY c.name COLLATE NOCASE ASC`;
-  const rows = plainAll<ClientRow>(db.prepare(sql).all(...args));
+  const rows = plainAll<ClientRow>(await db.prepare(sql).all(...args));
   for (const r of rows) r.outstanding = (r.invoiced || 0) - (r.collected || 0);
   return rows;
 }
 
-export function clientStageCounts(): Record<string, number> {
-  const rows = db.prepare('SELECT sales_stage, COUNT(*) AS n FROM clients GROUP BY sales_stage').all() as {
+export async function clientStageCounts(): Promise<Record<string, number>> {
+  const rows = (await db.prepare('SELECT sales_stage, COUNT(*) AS n FROM clients GROUP BY sales_stage').all()) as {
     sales_stage: string;
     n: number;
   }[];
@@ -116,8 +97,8 @@ export function clientStageCounts(): Record<string, number> {
   return out;
 }
 
-export function getClient(id: number): Client | null {
-  const row = db.prepare('SELECT * FROM clients WHERE id = ?').get(id);
+export async function getClient(id: number): Promise<Client | null> {
+  const row = await db.prepare('SELECT * FROM clients WHERE id = ?').get(id);
   return row ? plain<Client>(row) : null;
 }
 
@@ -161,20 +142,20 @@ function clientValues(d: Partial<Client>): Bind[] {
   return CLIENT_COLS.map((c) => v[c]);
 }
 
-export function createClient(d: Partial<Client>): number {
+export async function createClient(d: Partial<Client>): Promise<number> {
   const cols = CLIENT_COLS.join(', ');
   const ph = CLIENT_COLS.map(() => '?').join(', ');
-  const r = db.prepare(`INSERT INTO clients(${cols}) VALUES(${ph})`).run(...clientValues(d));
+  const r = await db.prepare(`INSERT INTO clients(${cols}) VALUES(${ph})`).run(...clientValues(d));
   return Number(r.lastInsertRowid);
 }
 
-export function updateClient(id: number, d: Partial<Client>): void {
+export async function updateClient(id: number, d: Partial<Client>): Promise<void> {
   const set = CLIENT_COLS.map((c) => `${c}=?`).join(', ');
-  db.prepare(`UPDATE clients SET ${set}, updated_at=datetime('now') WHERE id=?`).run(...clientValues(d), id);
+  await db.prepare(`UPDATE clients SET ${set}, updated_at=datetime('now') WHERE id=?`).run(...clientValues(d), id);
 }
 
-export function deleteClient(id: number): void {
-  db.prepare('DELETE FROM clients WHERE id = ?').run(id);
+export async function deleteClient(id: number): Promise<void> {
+  await db.prepare('DELETE FROM clients WHERE id = ?').run(id);
 }
 
 // ---------------------------------------------------------------- Contracts
@@ -193,7 +174,7 @@ const CONTRACT_SELECT = `
     (SELECT COALESCE(SUM(i.total),0) FROM invoices i WHERE i.contract_id = ct.id AND i.status='paid') AS collected
   FROM contracts ct JOIN clients c ON c.id = ct.client_id`;
 
-export function listContracts(opts: { status?: string; q?: string } = {}): ContractRow[] {
+export async function listContracts(opts: { status?: string; q?: string } = {}): Promise<ContractRow[]> {
   const where: string[] = [];
   const args: Bind[] = [];
   if (opts.status && opts.status !== 'all') {
@@ -206,23 +187,23 @@ export function listContracts(opts: { status?: string; q?: string } = {}): Contr
     args.push(like, like, like);
   }
   const sql = `${CONTRACT_SELECT} ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY ct.created_at DESC`;
-  return plainAll<ContractRow>(db.prepare(sql).all(...args));
+  return plainAll<ContractRow>(await db.prepare(sql).all(...args));
 }
 
-export function contractsByClient(clientId: number): ContractRow[] {
+export async function contractsByClient(clientId: number): Promise<ContractRow[]> {
   return plainAll<ContractRow>(
-    db.prepare(`${CONTRACT_SELECT} WHERE ct.client_id = ? ORDER BY ct.created_at DESC`).all(clientId),
+    await db.prepare(`${CONTRACT_SELECT} WHERE ct.client_id = ? ORDER BY ct.created_at DESC`).all(clientId),
   );
 }
 
-export function getContract(id: number): ContractRow | null {
-  const row = db.prepare(`${CONTRACT_SELECT} WHERE ct.id = ?`).get(id);
+export async function getContract(id: number): Promise<ContractRow | null> {
+  const row = await db.prepare(`${CONTRACT_SELECT} WHERE ct.id = ?`).get(id);
   return row ? plain<ContractRow>(row) : null;
 }
 
-export function createContract(d: Partial<Contract>, items: { label: string; value: string }[] = []): number {
-  return tx(() => {
-    const r = db
+export async function createContract(d: Partial<Contract>, items: { label: string; value: string }[] = []): Promise<number> {
+  return tx(async () => {
+    const r = await db
       .prepare(
         `INSERT INTO contracts(client_id, title, party, pdf_file, pdf_name, start_date, end_date, billing_cycle, amount, currency, tax_rate, status, product, terms, notes)
          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
@@ -245,16 +226,16 @@ export function createContract(d: Partial<Contract>, items: { label: string; val
         d.notes ?? null,
       );
     const cid = Number(r.lastInsertRowid);
-    replaceContractItems(cid, items);
-    logActivity(d.client_id!, 'contract', `Contract added — ${d.title ?? 'Untitled Contract'}`, null,
+    await replaceContractItems(cid, items);
+    await logActivity(d.client_id!, 'contract', `Contract added — ${d.title ?? 'Untitled Contract'}`, null,
       { contract_id: cid, amount: d.amount ?? 0, currency: d.currency ?? 'INR' });
     return cid;
   });
 }
 
-export function updateContract(id: number, d: Partial<Contract>, items?: { label: string; value: string }[]): void {
-  tx(() => {
-    db.prepare(
+export async function updateContract(id: number, d: Partial<Contract>, items?: { label: string; value: string }[]): Promise<void> {
+  await tx(async () => {
+    await db.prepare(
       `UPDATE contracts SET title=?, party=?, start_date=?, end_date=?, billing_cycle=?, amount=?, currency=?, tax_rate=?, status=?, product=?, terms=?, notes=?, updated_at=datetime('now')
        WHERE id=?`,
     ).run(
@@ -272,30 +253,29 @@ export function updateContract(id: number, d: Partial<Contract>, items?: { label
       d.notes ?? null,
       id,
     );
-    if (items) replaceContractItems(id, items);
+    if (items) await replaceContractItems(id, items);
   });
 }
 
-export function setContractPdf(id: number, file: string | null, name: string | null): void {
-  db.prepare('UPDATE contracts SET pdf_file=?, pdf_name=?, updated_at=datetime(\'now\') WHERE id=?').run(file, name, id);
+export async function setContractPdf(id: number, file: string | null, name: string | null): Promise<void> {
+  await db.prepare('UPDATE contracts SET pdf_file=?, pdf_name=?, updated_at=datetime(\'now\') WHERE id=?').run(file, name, id);
 }
 
-export function deleteContract(id: number): void {
-  db.prepare('DELETE FROM contracts WHERE id = ?').run(id);
+export async function deleteContract(id: number): Promise<void> {
+  await db.prepare('DELETE FROM contracts WHERE id = ?').run(id);
 }
 
-export function itemsByContract(contractId: number): ContractItem[] {
+export async function itemsByContract(contractId: number): Promise<ContractItem[]> {
   return plainAll<ContractItem>(
-    db.prepare('SELECT * FROM contract_items WHERE contract_id = ? ORDER BY sort, id').all(contractId),
+    await db.prepare('SELECT * FROM contract_items WHERE contract_id = ? ORDER BY sort, id').all(contractId),
   );
 }
 
-export function replaceContractItems(contractId: number, items: { label: string; value: string }[]): void {
-  db.prepare('DELETE FROM contract_items WHERE contract_id = ?').run(contractId);
+export async function replaceContractItems(contractId: number, items: { label: string; value: string }[]): Promise<void> {
+  await db.prepare('DELETE FROM contract_items WHERE contract_id = ?').run(contractId);
   const stmt = db.prepare('INSERT INTO contract_items(contract_id, label, value, sort) VALUES(?,?,?,?)');
-  items
-    .filter((it) => (it.label || '').trim() || (it.value || '').trim())
-    .forEach((it, i) => stmt.run(contractId, it.label || '', it.value || '', i));
+  const rows = items.filter((it) => (it.label || '').trim() || (it.value || '').trim());
+  for (let i = 0; i < rows.length; i++) await stmt.run(contractId, rows[i].label || '', rows[i].value || '', i);
 }
 
 // ---------------------------------------------------------------- Invoices
@@ -308,7 +288,7 @@ const INVOICE_SELECT = `
   SELECT i.*, c.name AS client_name, ct.title AS contract_title
   FROM invoices i JOIN clients c ON c.id = i.client_id JOIN contracts ct ON ct.id = i.contract_id`;
 
-export function listInvoices(opts: { status?: string; q?: string; year?: string } = {}): InvoiceRow[] {
+export async function listInvoices(opts: { status?: string; q?: string; year?: string } = {}): Promise<InvoiceRow[]> {
   const where: string[] = [];
   const args: Bind[] = [];
   if (opts.status && opts.status !== 'all') {
@@ -325,42 +305,42 @@ export function listInvoices(opts: { status?: string; q?: string; year?: string 
     args.push(like, like, like);
   }
   const sql = `${INVOICE_SELECT} ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY i.issue_date DESC, i.id DESC`;
-  return plainAll<InvoiceRow>(db.prepare(sql).all(...args));
+  return plainAll<InvoiceRow>(await db.prepare(sql).all(...args));
 }
 
-export function invoicesByContract(contractId: number): InvoiceRow[] {
+export async function invoicesByContract(contractId: number): Promise<InvoiceRow[]> {
   return plainAll<InvoiceRow>(
-    db.prepare(`${INVOICE_SELECT} WHERE i.contract_id = ? ORDER BY i.issue_date DESC, i.id DESC`).all(contractId),
+    await db.prepare(`${INVOICE_SELECT} WHERE i.contract_id = ? ORDER BY i.issue_date DESC, i.id DESC`).all(contractId),
   );
 }
 
-export function invoicesByClient(clientId: number): InvoiceRow[] {
+export async function invoicesByClient(clientId: number): Promise<InvoiceRow[]> {
   return plainAll<InvoiceRow>(
-    db.prepare(`${INVOICE_SELECT} WHERE i.client_id = ? ORDER BY i.issue_date DESC, i.id DESC`).all(clientId),
+    await db.prepare(`${INVOICE_SELECT} WHERE i.client_id = ? ORDER BY i.issue_date DESC, i.id DESC`).all(clientId),
   );
 }
 
-export function getInvoice(id: number): InvoiceRow | null {
-  const row = db.prepare(`${INVOICE_SELECT} WHERE i.id = ?`).get(id);
+export async function getInvoice(id: number): Promise<InvoiceRow | null> {
+  const row = await db.prepare(`${INVOICE_SELECT} WHERE i.id = ?`).get(id);
   return row ? plain<InvoiceRow>(row) : null;
 }
 
-export function itemsByInvoice(invoiceId: number): InvoiceItem[] {
+export async function itemsByInvoice(invoiceId: number): Promise<InvoiceItem[]> {
   return plainAll<InvoiceItem>(
-    db.prepare('SELECT * FROM invoice_items WHERE invoice_id = ? ORDER BY sort, id').all(invoiceId),
+    await db.prepare('SELECT * FROM invoice_items WHERE invoice_id = ? ORDER BY sort, id').all(invoiceId),
   );
 }
 
-export function invoiceYears(): string[] {
-  const rows = db
+export async function invoiceYears(): Promise<string[]> {
+  const rows = (await db
     .prepare("SELECT DISTINCT strftime('%Y', issue_date) AS y FROM invoices ORDER BY y DESC")
-    .all() as { y: string }[];
+    .all()) as { y: string }[];
   return rows.map((r) => r.y).filter(Boolean);
 }
 
 /** Generate the next invoice number using the org prefix + year + running sequence. */
-export function peekInvoiceNumber(issueDate: string): string {
-  const s = getSettings();
+export async function peekInvoiceNumber(issueDate: string): Promise<string> {
+  const s = await getSettings();
   const seq = parseInt(s.invoice_next_seq || '1', 10) || 1;
   const year = (issueDate || '').slice(0, 4) || String(new Date().getFullYear());
   return `${s.invoice_prefix || 'INV'}-${year}-${String(seq).padStart(4, '0')}`;
@@ -391,15 +371,15 @@ function computeTotals(items: { qty: number; unit_price: number }[], taxRate: nu
   return { subtotal: +subtotal.toFixed(2), tax_amount, total };
 }
 
-export function createInvoice(
+export async function createInvoice(
   d: InvoiceInput,
   items: { description: string; qty: number; unit_price: number }[],
   opts: { bumpSeq?: boolean } = {},
-): number {
+): Promise<number> {
   const lineItems = items.filter((it) => (it.description || '').trim() || it.qty || it.unit_price);
   const { subtotal, tax_amount, total } = computeTotals(lineItems, d.tax_rate);
-  return tx(() => {
-    const r = db
+  return tx(async () => {
+    const r = await db
       .prepare(
         `INSERT INTO invoices(contract_id, client_id, invoice_number, issue_date, due_date, period_start, period_end,
           bill_to_name, client_address, gst_number, currency, subtotal, tax_rate, tax_amount, total, template, template_mode, notes, status)
@@ -429,29 +409,30 @@ export function createInvoice(
     const stmt = db.prepare(
       'INSERT INTO invoice_items(invoice_id, description, qty, unit_price, amount, sort) VALUES(?,?,?,?,?,?)',
     );
-    lineItems.forEach((it, i) =>
-      stmt.run(id, it.description || '', it.qty || 0, it.unit_price || 0, +((it.qty || 0) * (it.unit_price || 0)).toFixed(2), i),
-    );
-    logActivity(d.client_id, 'invoice', `Invoice ${d.invoice_number} generated`, null,
+    for (let i = 0; i < lineItems.length; i++) {
+      const it = lineItems[i];
+      await stmt.run(id, it.description || '', it.qty || 0, it.unit_price || 0, +((it.qty || 0) * (it.unit_price || 0)).toFixed(2), i);
+    }
+    await logActivity(d.client_id, 'invoice', `Invoice ${d.invoice_number} generated`, null,
       { invoice_id: id, total, currency: d.currency });
     if (opts.bumpSeq) {
-      const s = getSettings();
+      const s = await getSettings();
       const next = (parseInt(s.invoice_next_seq || '1', 10) || 1) + 1;
-      updateSettings({ invoice_next_seq: String(next) });
+      await updateSettings({ invoice_next_seq: String(next) });
     }
     return id;
   });
 }
 
-export function updateInvoice(
+export async function updateInvoice(
   id: number,
   d: Partial<InvoiceInput>,
   items: { description: string; qty: number; unit_price: number }[],
-): void {
+): Promise<void> {
   const lineItems = items.filter((it) => (it.description || '').trim() || it.qty || it.unit_price);
   const { subtotal, tax_amount, total } = computeTotals(lineItems, d.tax_rate ?? 0);
-  tx(() => {
-    db.prepare(
+  await tx(async () => {
+    await db.prepare(
       `UPDATE invoices SET invoice_number=?, issue_date=?, due_date=?, period_start=?, period_end=?,
         bill_to_name=?, client_address=?, gst_number=?, currency=?, subtotal=?, tax_rate=?, tax_amount=?, total=?, template=?, template_mode=?, notes=?, updated_at=datetime('now')
        WHERE id=?`,
@@ -474,39 +455,40 @@ export function updateInvoice(
       d.notes ?? null,
       id,
     );
-    db.prepare('DELETE FROM invoice_items WHERE invoice_id = ?').run(id);
+    await db.prepare('DELETE FROM invoice_items WHERE invoice_id = ?').run(id);
     const stmt = db.prepare(
       'INSERT INTO invoice_items(invoice_id, description, qty, unit_price, amount, sort) VALUES(?,?,?,?,?,?)',
     );
-    lineItems.forEach((it, i) =>
-      stmt.run(id, it.description || '', it.qty || 0, it.unit_price || 0, +((it.qty || 0) * (it.unit_price || 0)).toFixed(2), i),
-    );
+    for (let i = 0; i < lineItems.length; i++) {
+      const it = lineItems[i];
+      await stmt.run(id, it.description || '', it.qty || 0, it.unit_price || 0, +((it.qty || 0) * (it.unit_price || 0)).toFixed(2), i);
+    }
   });
 }
 
-export function markPaid(
+export async function markPaid(
   id: number,
   d: { paid_at: string; payment_method: string; payment_account: string; transaction_ref: string; payment_proof?: string | null },
-): void {
-  db.prepare(
+): Promise<void> {
+  await db.prepare(
     `UPDATE invoices SET status='paid', paid_at=?, payment_method=?, payment_account=?, transaction_ref=?, payment_proof=COALESCE(?, payment_proof), updated_at=datetime('now')
      WHERE id=?`,
   ).run(d.paid_at, d.payment_method, d.payment_account, d.transaction_ref, d.payment_proof ?? null, id);
-  const iv = db.prepare('SELECT client_id, invoice_number, total, currency FROM invoices WHERE id=?').get(id) as
+  const iv = (await db.prepare('SELECT client_id, invoice_number, total, currency FROM invoices WHERE id=?').get(id)) as
     | { client_id: number; invoice_number: string; total: number; currency: string } | undefined;
-  if (iv) logActivity(iv.client_id, 'payment', `Payment recorded — ${iv.invoice_number}`, null,
+  if (iv) await logActivity(iv.client_id, 'payment', `Payment recorded — ${iv.invoice_number}`, null,
     { invoice_id: id, total: iv.total, currency: iv.currency });
 }
 
-export function markUnpaid(id: number): void {
-  db.prepare(
+export async function markUnpaid(id: number): Promise<void> {
+  await db.prepare(
     `UPDATE invoices SET status='unpaid', paid_at=NULL, payment_method=NULL, payment_account=NULL, transaction_ref=NULL, payment_proof=NULL, updated_at=datetime('now')
      WHERE id=?`,
   ).run(id);
 }
 
-export function deleteInvoice(id: number): void {
-  db.prepare('DELETE FROM invoices WHERE id = ?').run(id);
+export async function deleteInvoice(id: number): Promise<void> {
+  await db.prepare('DELETE FROM invoices WHERE id = ?').run(id);
 }
 
 // ---------------------------------------------------------------- Reporting
@@ -520,10 +502,10 @@ export interface Totals {
   overdueCount: number;
 }
 
-export function totals(year?: string): Totals {
+export async function totals(year?: string): Promise<Totals> {
   const yearFilter = year && year !== 'all' ? "WHERE strftime('%Y', issue_date) = ?" : '';
   const args = year && year !== 'all' ? [year] : [];
-  const r = db
+  const r = (await db
     .prepare(
       `SELECT
         COALESCE(SUM(total),0) AS invoiced,
@@ -534,7 +516,7 @@ export function totals(year?: string): Totals {
         COALESCE(SUM(CASE WHEN status!='paid' AND due_date IS NOT NULL AND due_date < date('now') THEN 1 ELSE 0 END),0) AS overdueCount
        FROM invoices ${yearFilter}`,
     )
-    .get(...args) as unknown as Totals;
+    .get(...args)) as unknown as Totals;
   const out = plain<Totals>(r);
   out.outstanding = (out.invoiced || 0) - (out.collected || 0);
   return out;
@@ -547,9 +529,9 @@ export interface PeriodRevenue {
   count: number;
 }
 
-export function revenueByYear(): PeriodRevenue[] {
+export async function revenueByYear(): Promise<PeriodRevenue[]> {
   return plainAll<PeriodRevenue>(
-    db
+    await db
       .prepare(
         `SELECT strftime('%Y', issue_date) AS period,
           COALESCE(SUM(total),0) AS invoiced,
@@ -561,9 +543,9 @@ export function revenueByYear(): PeriodRevenue[] {
   );
 }
 
-export function revenueByMonth(year: string): PeriodRevenue[] {
+export async function revenueByMonth(year: string): Promise<PeriodRevenue[]> {
   const rows = plainAll<PeriodRevenue>(
-    db
+    await db
       .prepare(
         `SELECT strftime('%m', issue_date) AS period,
           COALESCE(SUM(total),0) AS invoiced,
@@ -579,9 +561,9 @@ export function revenueByMonth(year: string): PeriodRevenue[] {
   return months.map((m) => map.get(m) ?? { period: m, invoiced: 0, collected: 0, count: 0 });
 }
 
-export function revenueByWeek(weeks = 12): PeriodRevenue[] {
+export async function revenueByWeek(weeks = 12): Promise<PeriodRevenue[]> {
   return plainAll<PeriodRevenue>(
-    db
+    await db
       .prepare(
         `SELECT strftime('%Y-W%W', issue_date) AS period,
           COALESCE(SUM(total),0) AS invoiced,
@@ -604,11 +586,11 @@ export interface ClientRevenue {
   outstanding: number;
 }
 
-export function revenueByClient(year?: string): ClientRevenue[] {
+export async function revenueByClient(year?: string): Promise<ClientRevenue[]> {
   const yearFilter = year && year !== 'all' ? "AND strftime('%Y', i.issue_date) = ?" : '';
   const args = year && year !== 'all' ? [year] : [];
   const rows = plainAll<ClientRevenue>(
-    db
+    await db
       .prepare(
         `SELECT c.id, c.name, c.status,
           COALESCE(SUM(i.total),0) AS invoiced,
@@ -624,10 +606,10 @@ export function revenueByClient(year?: string): ClientRevenue[] {
 }
 
 /** Annual recurring revenue from active recurring contracts (excludes one-time). */
-export function recurringRevenue(): { arr: number; byCycle: Record<string, number> } {
-  const rows = db
+export async function recurringRevenue(): Promise<{ arr: number; byCycle: Record<string, number> }> {
+  const rows = (await db
     .prepare("SELECT billing_cycle, amount FROM contracts WHERE status='active'")
-    .all() as { billing_cycle: string; amount: number }[];
+    .all()) as { billing_cycle: string; amount: number }[];
   let arr = 0;
   const byCycle: Record<string, number> = { annual: 0, monthly: 0, weekly: 0, one_time: 0 };
   for (const r of rows) {
@@ -646,19 +628,19 @@ export interface Counts {
   invoices: number;
 }
 
-export function counts(): Counts {
-  const g = (sql: string) => (db.prepare(sql).get() as unknown as { n: number }).n;
+export async function counts(): Promise<Counts> {
+  const g = async (sql: string) => Number(((await db.prepare(sql).get()) as { n: number } | undefined)?.n ?? 0);
   return {
-    clients: g('SELECT COUNT(*) AS n FROM clients'),
-    activeClients: g("SELECT COUNT(*) AS n FROM clients WHERE status='active'"),
-    contracts: g('SELECT COUNT(*) AS n FROM contracts'),
-    activeContracts: g("SELECT COUNT(*) AS n FROM contracts WHERE status='active'"),
-    invoices: g('SELECT COUNT(*) AS n FROM invoices'),
+    clients: await g('SELECT COUNT(*) AS n FROM clients'),
+    activeClients: await g("SELECT COUNT(*) AS n FROM clients WHERE status='active'"),
+    contracts: await g('SELECT COUNT(*) AS n FROM contracts'),
+    activeContracts: await g("SELECT COUNT(*) AS n FROM contracts WHERE status='active'"),
+    invoices: await g('SELECT COUNT(*) AS n FROM invoices'),
   };
 }
 
-export function clientStatusCounts(): Record<string, number> {
-  const rows = db.prepare('SELECT status, COUNT(*) AS n FROM clients GROUP BY status').all() as {
+export async function clientStatusCounts(): Promise<Record<string, number>> {
+  const rows = (await db.prepare('SELECT status, COUNT(*) AS n FROM clients GROUP BY status').all()) as {
     status: string;
     n: number;
   }[];
@@ -667,14 +649,14 @@ export function clientStatusCounts(): Record<string, number> {
   return out;
 }
 
-export function recentInvoices(limit = 8): InvoiceRow[] {
-  return plainAll<InvoiceRow>(db.prepare(`${INVOICE_SELECT} ORDER BY i.created_at DESC LIMIT ?`).all(limit));
+export async function recentInvoices(limit = 8): Promise<InvoiceRow[]> {
+  return plainAll<InvoiceRow>(await db.prepare(`${INVOICE_SELECT} ORDER BY i.created_at DESC LIMIT ?`).all(limit));
 }
 
 /** Contracts whose validity ends within `days`. */
-export function expiringContracts(days = 60): ContractRow[] {
+export async function expiringContracts(days = 60): Promise<ContractRow[]> {
   return plainAll<ContractRow>(
-    db
+    await db
       .prepare(
         `${CONTRACT_SELECT} WHERE ct.status='active' AND ct.end_date IS NOT NULL
          AND ct.end_date >= date('now') AND ct.end_date <= date('now', ?)
@@ -693,9 +675,9 @@ export interface MonthPoint {
 }
 
 /** Last `n` calendar months (inclusive of current), zero-filled. */
-export function monthlySeries(n = 12): MonthPoint[] {
+export async function monthlySeries(n = 12): Promise<MonthPoint[]> {
   const rows = plainAll<MonthPoint & { month: string }>(
-    db
+    await db
       .prepare(
         `SELECT strftime('%Y-%m', issue_date) AS month,
           COALESCE(SUM(total),0) AS invoiced,
@@ -728,10 +710,10 @@ export interface CategoryRevenue {
 }
 
 /** Revenue rolled up by the contract's product category. */
-export function revenueByCategory(year?: string): CategoryRevenue[] {
+export async function revenueByCategory(year?: string): Promise<CategoryRevenue[]> {
   const yearFilter = year && year !== 'all' ? "AND strftime('%Y', i.issue_date) = ?" : '';
   const args = year && year !== 'all' ? [year] : [];
-  const rows = db
+  const rows = (await db
     .prepare(
       `SELECT ct.product AS product,
         COALESCE(SUM(i.total),0) AS invoiced,
@@ -740,10 +722,10 @@ export function revenueByCategory(year?: string): CategoryRevenue[] {
       WHERE 1=1 ${yearFilter}
       GROUP BY ct.product`,
     )
-    .all(...args) as { product: string | null; invoiced: number; collected: number }[];
-  const contractCounts = db
+    .all(...args)) as { product: string | null; invoiced: number; collected: number }[];
+  const contractCounts = (await db
     .prepare(`SELECT product, COUNT(*) AS n FROM contracts GROUP BY product`)
-    .all() as { product: string | null; n: number }[];
+    .all()) as { product: string | null; n: number }[];
 
   const catOf = (p: string | null) => (p ? p.split('-')[0] : 'untagged');
   const agg = new Map<string, CategoryRevenue>();
@@ -770,11 +752,11 @@ export interface ProductRevenue {
   invoices: number;
 }
 
-export function revenueByProduct(year?: string): ProductRevenue[] {
+export async function revenueByProduct(year?: string): Promise<ProductRevenue[]> {
   const yearFilter = year && year !== 'all' ? "AND strftime('%Y', i.issue_date) = ?" : '';
   const args = year && year !== 'all' ? [year] : [];
   return plainAll<ProductRevenue>(
-    db
+    await db
       .prepare(
         `SELECT ct.product AS product,
           COALESCE(SUM(i.total),0) AS invoiced,
@@ -800,42 +782,44 @@ function delta(current: number, previous: number): MonthDelta {
 }
 
 /** Real month-over-month movement for the KPI tiles (no invented numbers). */
-export function monthDeltas(): { collected: MonthDelta; invoiced: MonthDelta; invoices: MonthDelta } {
-  const g = (expr: string, offset: string) =>
-    (db
+export async function monthDeltas(): Promise<{ collected: MonthDelta; invoiced: MonthDelta; invoices: MonthDelta }> {
+  const g = async (expr: string, offset: string) =>
+    Number(((await db
       .prepare(
         `SELECT COALESCE(${expr},0) AS v FROM invoices
          WHERE strftime('%Y-%m', issue_date) = strftime('%Y-%m', date('now', ?))`,
       )
-      .get(offset) as unknown as { v: number }).v;
+      .get(offset)) as { v: number } | undefined)?.v ?? 0);
   return {
-    collected: delta(g("SUM(CASE WHEN status='paid' THEN total ELSE 0 END)", '+0 months'), g("SUM(CASE WHEN status='paid' THEN total ELSE 0 END)", '-1 months')),
-    invoiced: delta(g('SUM(total)', '+0 months'), g('SUM(total)', '-1 months')),
-    invoices: delta(g('COUNT(*)', '+0 months'), g('COUNT(*)', '-1 months')),
+    collected: delta(await g("SUM(CASE WHEN status='paid' THEN total ELSE 0 END)", '+0 months'), await g("SUM(CASE WHEN status='paid' THEN total ELSE 0 END)", '-1 months')),
+    invoiced: delta(await g('SUM(total)', '+0 months'), await g('SUM(total)', '-1 months')),
+    invoices: delta(await g('COUNT(*)', '+0 months'), await g('COUNT(*)', '-1 months')),
   };
 }
 
 // ================================================================ Contacts
-export function contactsByClient(clientId: number): Contact[] {
+export async function contactsByClient(clientId: number): Promise<Contact[]> {
   return plainAll<Contact>(
-    db.prepare('SELECT * FROM contacts WHERE client_id = ? ORDER BY sort, id').all(clientId),
+    await db.prepare('SELECT * FROM contacts WHERE client_id = ? ORDER BY sort, id').all(clientId),
   );
 }
 
-export function replaceContacts(clientId: number, rows: Partial<Contact>[]): void {
-  tx(() => {
-    db.prepare('DELETE FROM contacts WHERE client_id = ?').run(clientId);
+export async function replaceContacts(clientId: number, rows: Partial<Contact>[]): Promise<void> {
+  await tx(async () => {
+    await db.prepare('DELETE FROM contacts WHERE client_id = ?').run(clientId);
     const stmt = db.prepare(
       'INSERT INTO contacts(client_id, role, name, email, phone, location, linkedin, sort) VALUES(?,?,?,?,?,?,?,?)',
     );
-    rows
-      .filter((r) => (r.name || r.email || r.phone || r.linkedin || '').trim())
-      .forEach((r, i) => stmt.run(clientId, r.role ?? 'poc', r.name ?? null, r.email ?? null, r.phone ?? null, r.location ?? null, r.linkedin ?? null, i));
+    const keep = rows.filter((r) => (r.name || r.email || r.phone || r.linkedin || '').trim());
+    for (let i = 0; i < keep.length; i++) {
+      const r = keep[i];
+      await stmt.run(clientId, r.role ?? 'poc', r.name ?? null, r.email ?? null, r.phone ?? null, r.location ?? null, r.linkedin ?? null, i);
+    }
   });
 }
 
 // ============================================================== Activities
-export function logActivity(
+export async function logActivity(
   clientId: number,
   kind: ActivityKind,
   title: string,
@@ -843,8 +827,8 @@ export function logActivity(
   meta: Record<string, unknown> | null = null,
   occurredAt?: string,
   file?: { file: string; name: string } | null,
-): number {
-  const r = db
+): Promise<number> {
+  const r = await db
     .prepare(
       `INSERT INTO activities(client_id, kind, title, body, occurred_at, file, file_name, meta)
        VALUES(?,?,?,?,COALESCE(?, datetime('now')),?,?,?)`,
@@ -853,23 +837,23 @@ export function logActivity(
   return Number(r.lastInsertRowid);
 }
 
-export function activitiesByClient(clientId: number): Activity[] {
+export async function activitiesByClient(clientId: number): Promise<Activity[]> {
   return plainAll<Activity>(
-    db.prepare('SELECT * FROM activities WHERE client_id = ? ORDER BY occurred_at DESC, id DESC').all(clientId),
+    await db.prepare('SELECT * FROM activities WHERE client_id = ? ORDER BY occurred_at DESC, id DESC').all(clientId),
   );
 }
 
-export function deleteActivity(id: number): void {
-  db.prepare('DELETE FROM activities WHERE id = ?').run(id);
+export async function deleteActivity(id: number): Promise<void> {
+  await db.prepare('DELETE FROM activities WHERE id = ?').run(id);
 }
 
 export interface ActivityRow extends Activity {
   client_name: string;
 }
 
-export function recentActivities(limit = 12): ActivityRow[] {
+export async function recentActivities(limit = 12): Promise<ActivityRow[]> {
   return plainAll<ActivityRow>(
-    db
+    await db
       .prepare(
         `SELECT a.*, c.name AS client_name FROM activities a JOIN clients c ON c.id = a.client_id
          ORDER BY a.occurred_at DESC, a.id DESC LIMIT ?`,
@@ -885,21 +869,21 @@ export interface ApprovalRow extends Approval {
 
 const APPROVAL_SELECT = `SELECT a.*, c.name AS client_name FROM approvals a LEFT JOIN clients c ON c.id = a.client_id`;
 
-export function listApprovals(status?: string): ApprovalRow[] {
+export async function listApprovals(status?: string): Promise<ApprovalRow[]> {
   const where = status && status !== 'all' ? 'WHERE a.status = ?' : '';
   const args = status && status !== 'all' ? [status] : [];
   return plainAll<ApprovalRow>(
-    db.prepare(`${APPROVAL_SELECT} ${where} ORDER BY (a.status='pending') DESC, a.created_at DESC`).all(...args),
+    await db.prepare(`${APPROVAL_SELECT} ${where} ORDER BY (a.status='pending') DESC, a.created_at DESC`).all(...args),
   );
 }
 
-export function getApproval(id: number): ApprovalRow | null {
-  const row = db.prepare(`${APPROVAL_SELECT} WHERE a.id = ?`).get(id);
+export async function getApproval(id: number): Promise<ApprovalRow | null> {
+  const row = await db.prepare(`${APPROVAL_SELECT} WHERE a.id = ?`).get(id);
   return row ? plain<ApprovalRow>(row) : null;
 }
 
-export function approvalCounts(): Record<ApprovalStatus, number> {
-  const rows = db.prepare('SELECT status, COUNT(*) AS n FROM approvals GROUP BY status').all() as {
+export async function approvalCounts(): Promise<Record<ApprovalStatus, number>> {
+  const rows = (await db.prepare('SELECT status, COUNT(*) AS n FROM approvals GROUP BY status').all()) as {
     status: ApprovalStatus;
     n: number;
   }[];
@@ -908,8 +892,8 @@ export function approvalCounts(): Record<ApprovalStatus, number> {
   return out;
 }
 
-export function createApproval(d: Partial<Approval>): number {
-  const r = db
+export async function createApproval(d: Partial<Approval>): Promise<number> {
+  const r = await db
     .prepare(
       `INSERT INTO approvals(title, detail, kind, client_id, contract_id, invoice_id, amount, currency, requested_by, status)
        VALUES(?,?,?,?,?,?,?,?,?, 'pending')`,
@@ -922,14 +906,14 @@ export function createApproval(d: Partial<Approval>): number {
   return Number(r.lastInsertRowid);
 }
 
-export function decideApproval(id: number, status: ApprovalStatus, note: string, by = 'You'): void {
-  db.prepare(
+export async function decideApproval(id: number, status: ApprovalStatus, note: string, by = 'You'): Promise<void> {
+  await db.prepare(
     `UPDATE approvals SET status=?, decision_note=?, decided_by=?, decided_at=datetime('now') WHERE id=?`,
   ).run(status, note || null, by, id);
 }
 
-export function deleteApproval(id: number): void {
-  db.prepare('DELETE FROM approvals WHERE id = ?').run(id);
+export async function deleteApproval(id: number): Promise<void> {
+  await db.prepare('DELETE FROM approvals WHERE id = ?').run(id);
 }
 
 // =============================================================== Pipeline
@@ -946,9 +930,9 @@ export interface PipelineClient {
   outstanding: number;
 }
 
-export function pipelineClients(): PipelineClient[] {
+export async function pipelineClients(): Promise<PipelineClient[]> {
   return plainAll<PipelineClient>(
-    db
+    await db
       .prepare(
         `SELECT c.id, c.name, c.sales_stage, c.segment, c.source, c.projected_value, c.currency, c.expected_close,
           (SELECT MAX(a.occurred_at) FROM activities a WHERE a.client_id = c.id) AS last_activity_at,
@@ -966,22 +950,23 @@ export interface StageAgg {
   projected: number;
 }
 
-export function pipelineFunnel(): StageAgg[] {
+export async function pipelineFunnel(): Promise<StageAgg[]> {
   return plainAll<StageAgg>(
-    db.prepare('SELECT sales_stage AS stage, COUNT(*) AS count, COALESCE(SUM(projected_value),0) AS projected FROM clients GROUP BY sales_stage').all(),
+    await db.prepare('SELECT sales_stage AS stage, COUNT(*) AS count, COALESCE(SUM(projected_value),0) AS projected FROM clients GROUP BY sales_stage').all(),
   );
 }
 
-export function setSalesStage(clientId: number, stage: SalesStage): void {
-  const cur = db.prepare('SELECT sales_stage, name FROM clients WHERE id=?').get(clientId) as
+export async function setSalesStage(clientId: number, stage: SalesStage): Promise<void> {
+  const cur = (await db.prepare('SELECT sales_stage, name FROM clients WHERE id=?').get(clientId)) as
     | { sales_stage: SalesStage; name: string } | undefined;
-  if (!cur || cur.sales_stage === stage) {
-    if (cur) db.prepare("UPDATE clients SET sales_stage=?, updated_at=datetime('now') WHERE id=?").run(stage, clientId);
+  if (!cur) return;
+  if (cur.sales_stage === stage) {
+    await db.prepare("UPDATE clients SET sales_stage=?, updated_at=datetime('now') WHERE id=?").run(stage, clientId);
     return;
   }
-  tx(() => {
-    db.prepare("UPDATE clients SET sales_stage=?, updated_at=datetime('now') WHERE id=?").run(stage, clientId);
-    logActivity(clientId, 'stage', 'Stage moved', null, { from: cur.sales_stage, to: stage });
+  await tx(async () => {
+    await db.prepare("UPDATE clients SET sales_stage=?, updated_at=datetime('now') WHERE id=?").run(stage, clientId);
+    await logActivity(clientId, 'stage', 'Stage moved', null, { from: cur.sales_stage, to: stage });
   });
 }
 
@@ -995,15 +980,15 @@ export interface FollowUp {
   reason: string;
 }
 
-export function followUps(limit = 8): FollowUp[] {
-  const rows = db
+export async function followUps(limit = 8): Promise<FollowUp[]> {
+  const rows = (await db
     .prepare(
       `SELECT c.id, c.name, c.sales_stage, c.expected_close,
         (SELECT MAX(a.occurred_at) FROM activities a WHERE a.client_id = c.id) AS last_activity_at
       FROM clients c
       WHERE c.sales_stage IN ('communication_started','active_communication','physical_meetings','sales_cycle')`,
     )
-    .all() as Omit<FollowUp, 'reason'>[];
+    .all()) as Omit<FollowUp, 'reason'>[];
   const now = Date.now();
   const scored = rows.map((r) => {
     const closeIn = r.expected_close ? Math.round((new Date(r.expected_close + 'T00:00:00').getTime() - now) / 86400000) : null;

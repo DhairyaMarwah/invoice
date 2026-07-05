@@ -24,8 +24,8 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 
 export default async function ReportsPage({ searchParams }: { searchParams: Promise<{ year?: string }> }) {
   const sp = await searchParams;
-  const cur = getSettings().default_currency || 'INR';
-  const years = invoiceYears();
+  const cur = (await getSettings()).default_currency || 'INR';
+  const years = await invoiceYears();
   const thisYear = String(new Date().getFullYear());
 
   if (years.length === 0) {
@@ -42,14 +42,14 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   const selected = sp.year && sp.year !== 'all' ? sp.year : years.includes(thisYear) ? thisYear : years[0];
   const scope = sp.year === 'all' ? undefined : selected;
 
-  const t = totals(scope);
-  const byYear = revenueByYear();
-  const byMonth = revenueByMonth(selected);
-  const byWeek = revenueByWeek(12);
-  const byClient = revenueByClient(scope);
-  const byCat = revenueByCategory(scope);
-  const byProduct = revenueByProduct(scope);
-  const { arr } = recurringRevenue();
+  const t = await totals(scope);
+  const byYear = await revenueByYear();
+  const byMonth = await revenueByMonth(selected);
+  const byWeek = await revenueByWeek(12);
+  const byClient = await revenueByClient(scope);
+  const byCat = await revenueByCategory(scope);
+  const byProduct = await revenueByProduct(scope);
+  const { arr } = await recurringRevenue();
   const CAT_COLOR: Record<string, string> = { pegasus: 'var(--info-solid)', iris: 'var(--pur-solid)', atlas: 'var(--warn-solid)', untagged: 'var(--neu-solid)' };
   const CAT_LABEL: Record<string, string> = { pegasus: 'Pegasus', iris: 'Iris', atlas: 'Atlas', untagged: 'Untagged' };
   const catTotal = byCat.reduce((a, b) => a + b.invoiced, 0);

@@ -17,7 +17,7 @@ export default async function ContractsPage({
   searchParams: Promise<{ status?: string; q?: string }>;
 }) {
   const sp = await searchParams;
-  const contracts = listContracts({ status: sp.status, q: sp.q });
+  const contracts = await listContracts({ status: sp.status, q: sp.q });
 
   const segments = [
     { value: 'all', label: 'All' },

@@ -2,12 +2,9 @@
 
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
-import fs from 'node:fs';
-import path from 'node:path';
-import { randomUUID } from 'node:crypto';
-import { UPLOAD_DIR } from '@/lib/db';
 import * as repo from '@/lib/repo';
 import { extract, type Extraction } from '@/lib/extract';
+import { saveUpload } from '@/lib/storage';
 import type { Activity, Approval, Client, Contact, Contract } from '@/lib/types';
 
 // ---- FormData helpers ----
@@ -20,25 +17,6 @@ const n = (fd: FormData, k: string): number => {
   const v = parseFloat(String(fd.get(k) ?? '').replace(/,/g, ''));
   return isNaN(v) ? 0 : v;
 };
-
-const EXT_BY_MIME: Record<string, string> = {
-  'application/pdf': 'pdf',
-  'image/png': 'png',
-  'image/jpeg': 'jpg',
-  'image/webp': 'webp',
-  'image/svg+xml': 'svg',
-  'image/heic': 'heic',
-};
-
-async function saveUpload(file: File, prefix = 'contract'): Promise<{ file: string; name: string } | null> {
-  if (!file || typeof file === 'string' || file.size === 0) return null;
-  fs.mkdirSync(UPLOAD_DIR, { recursive: true });
-  const ext = EXT_BY_MIME[file.type] ?? (file.name?.split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g, '');
-  const safe = `${prefix}-${Date.now()}-${randomUUID().slice(0, 8)}.${ext}`;
-  const buf = Buffer.from(await file.arrayBuffer());
-  fs.writeFileSync(path.join(UPLOAD_DIR, safe), buf);
-  return { file: safe, name: file.name || safe };
-}
 
 function zip<T extends Record<string, unknown[]>>(fd: FormData, keys: (keyof T)[]): Record<keyof T, string[]> {
   const out = {} as Record<keyof T, string[]>;
@@ -104,8 +82,8 @@ function readContacts(fd: FormData): Partial<Contact>[] {
 }
 
 export async function createClientAction(fd: FormData): Promise<void> {
-  const id = repo.createClient(readClient(fd));
-  repo.replaceContacts(id, readContacts(fd));
+  const id = await repo.createClient(readClient(fd));
+  await repo.replaceContacts(id, readContacts(fd));
   revalidatePath('/clients');
   revalidatePath('/');
   revalidatePath('/pipeline');
@@ -114,8 +92,8 @@ export async function createClientAction(fd: FormData): Promise<void> {
 
 export async function updateClientAction(fd: FormData): Promise<void> {
   const id = Number(s(fd, 'id'));
-  repo.updateClient(id, readClient(fd));
-  repo.replaceContacts(id, readContacts(fd));
+  await repo.updateClient(id, readClient(fd));
+  await repo.replaceContacts(id, readContacts(fd));
   revalidatePath('/clients');
   revalidatePath(`/clients/${id}`);
   revalidatePath('/pipeline');
@@ -126,14 +104,14 @@ export async function updateClientAction(fd: FormData): Promise<void> {
 export async function addActivityAction(fd: FormData): Promise<void> {
   const clientId = Number(s(fd, 'client_id'));
   const upload = await saveUpload(fd.get('file') as File, 'activity');
-  repo.logActivity(
+  await repo.logActivity(
     clientId,
     (s(fd, 'kind') || 'note') as Activity['kind'],
     s(fd, 'title') || 'Note',
     sOrNull(fd, 'body'),
     null,
     sOrNull(fd, 'occurred_at') ?? undefined,
-    upload ? { file: upload.file, name: upload.name } : null,
+    upload ? { file: upload.key, name: upload.name } : null,
   );
   revalidatePath(`/clients/${clientId}`);
   revalidatePath('/');
@@ -141,13 +119,13 @@ export async function addActivityAction(fd: FormData): Promise<void> {
 
 export async function deleteActivityAction(fd: FormData): Promise<void> {
   const clientId = Number(s(fd, 'client_id'));
-  repo.deleteActivity(Number(s(fd, 'id')));
+  await repo.deleteActivity(Number(s(fd, 'id')));
   revalidatePath(`/clients/${clientId}`);
 }
 
 export async function setStageAction(fd: FormData): Promise<void> {
   const clientId = Number(s(fd, 'client_id'));
-  repo.setSalesStage(clientId, (s(fd, 'stage') || 'untouched') as Client['sales_stage']);
+  await repo.setSalesStage(clientId, (s(fd, 'stage') || 'untouched') as Client['sales_stage']);
   revalidatePath('/pipeline');
   revalidatePath('/');
   revalidatePath(`/clients/${clientId}`);
@@ -155,7 +133,7 @@ export async function setStageAction(fd: FormData): Promise<void> {
 }
 
 export async function createApprovalAction(fd: FormData): Promise<void> {
-  repo.createApproval({
+  await repo.createApproval({
     title: s(fd, 'title') || 'Approval',
     detail: sOrNull(fd, 'detail'),
     kind: (s(fd, 'kind') || 'other') as Approval['kind'],
@@ -169,19 +147,19 @@ export async function createApprovalAction(fd: FormData): Promise<void> {
 
 export async function decideApprovalAction(fd: FormData): Promise<void> {
   const status: Approval['status'] = s(fd, 'status') === 'approved' ? 'approved' : 'rejected';
-  repo.decideApproval(Number(s(fd, 'id')), status, s(fd, 'note'));
+  await repo.decideApproval(Number(s(fd, 'id')), status, s(fd, 'note'));
   revalidatePath('/');
   revalidatePath('/approvals');
 }
 
 export async function deleteApprovalAction(fd: FormData): Promise<void> {
-  repo.deleteApproval(Number(s(fd, 'id')));
+  await repo.deleteApproval(Number(s(fd, 'id')));
   revalidatePath('/');
   revalidatePath('/approvals');
 }
 
 export async function deleteClientAction(fd: FormData): Promise<void> {
-  repo.deleteClient(Number(s(fd, 'id')));
+  await repo.deleteClient(Number(s(fd, 'id')));
   revalidatePath('/clients');
   revalidatePath('/');
   redirect('/clients');
@@ -205,12 +183,12 @@ export async function createContractAction(fd: FormData): Promise<void> {
   const upload = await saveUpload(fd.get('file') as File);
   const z = zip(fd, ['item_label', 'item_value']);
   const items = z.item_label.map((label, i) => ({ label, value: z.item_value[i] ?? '' }));
-  const id = repo.createContract(
+  const id = await repo.createContract(
     {
       client_id: clientId,
       title: s(fd, 'title') || 'Untitled Contract',
       party: sOrNull(fd, 'party'),
-      pdf_file: upload?.file ?? null,
+      pdf_file: upload?.key ?? null,
       pdf_name: upload?.name ?? null,
       start_date: sOrNull(fd, 'start_date'),
       end_date: sOrNull(fd, 'end_date'),
@@ -235,7 +213,7 @@ export async function updateContractAction(fd: FormData): Promise<void> {
   const upload = await saveUpload(fd.get('file') as File);
   const z = zip(fd, ['item_label', 'item_value']);
   const items = z.item_label.map((label, i) => ({ label, value: z.item_value[i] ?? '' }));
-  repo.updateContract(
+  await repo.updateContract(
     id,
     {
       title: s(fd, 'title'),
@@ -253,7 +231,7 @@ export async function updateContractAction(fd: FormData): Promise<void> {
     },
     items,
   );
-  if (upload) repo.setContractPdf(id, upload.file, upload.name);
+  if (upload) await repo.setContractPdf(id, upload.key, upload.name);
   revalidatePath('/contracts');
   revalidatePath(`/contracts/${id}`);
   redirect(`/contracts/${id}`);
@@ -262,7 +240,7 @@ export async function updateContractAction(fd: FormData): Promise<void> {
 export async function deleteContractAction(fd: FormData): Promise<void> {
   const id = Number(s(fd, 'id'));
   const clientId = s(fd, 'client_id');
-  repo.deleteContract(id);
+  await repo.deleteContract(id);
   revalidatePath('/contracts');
   if (clientId) revalidatePath(`/clients/${clientId}`);
   redirect(clientId ? `/clients/${clientId}` : '/contracts');
@@ -280,7 +258,7 @@ function readInvoiceItems(fd: FormData) {
 
 export async function createInvoiceAction(fd: FormData): Promise<void> {
   const items = readInvoiceItems(fd);
-  const id = repo.createInvoice(
+  const id = await repo.createInvoice(
     {
       contract_id: Number(s(fd, 'contract_id')),
       client_id: Number(s(fd, 'client_id')),
@@ -309,7 +287,7 @@ export async function createInvoiceAction(fd: FormData): Promise<void> {
 export async function updateInvoiceAction(fd: FormData): Promise<void> {
   const id = Number(s(fd, 'id'));
   const items = readInvoiceItems(fd);
-  repo.updateInvoice(
+  await repo.updateInvoice(
     id,
     {
       invoice_number: s(fd, 'invoice_number'),
@@ -358,12 +336,12 @@ export async function markPaidAction(fd: FormData): Promise<MarkPaidResult> {
   if (Object.keys(errors).length) return { ok: false, errors };
 
   const proof = proofFile ? await saveUpload(proofFile as File, 'proof') : null;
-  repo.markPaid(id, {
+  await repo.markPaid(id, {
     paid_at,
     payment_method,
     payment_account: s(fd, 'payment_account'),
     transaction_ref,
-    payment_proof: proof?.file ?? null,
+    payment_proof: proof?.key ?? null,
   });
   revalidatePath('/invoices');
   revalidatePath(`/invoices/${id}`);
@@ -373,7 +351,7 @@ export async function markPaidAction(fd: FormData): Promise<MarkPaidResult> {
 
 export async function markUnpaidAction(fd: FormData): Promise<void> {
   const id = Number(s(fd, 'id'));
-  repo.markUnpaid(id);
+  await repo.markUnpaid(id);
   revalidatePath('/invoices');
   revalidatePath(`/invoices/${id}`);
   revalidatePath('/');
@@ -382,7 +360,7 @@ export async function markUnpaidAction(fd: FormData): Promise<void> {
 export async function deleteInvoiceAction(fd: FormData): Promise<void> {
   const id = Number(s(fd, 'id'));
   const back = s(fd, 'back');
-  repo.deleteInvoice(id);
+  await repo.deleteInvoice(id);
   revalidatePath('/invoices');
   revalidatePath('/');
   redirect(back || '/invoices');
@@ -399,7 +377,7 @@ export async function updateSettingsAction(fd: FormData): Promise<void> {
   const accounts = labels
     .map((label, i) => ({ label, details: details[i] ?? '' }))
     .filter((a) => a.label || a.details);
-  repo.updateSettings({
+  await repo.updateSettings({
     org_name: s(fd, 'org_name'),
     org_tagline: s(fd, 'org_tagline'),
     org_address: s(fd, 'org_address'),
@@ -412,7 +390,7 @@ export async function updateSettingsAction(fd: FormData): Promise<void> {
     invoice_next_seq: s(fd, 'invoice_next_seq') || '1',
     invoice_due_days: s(fd, 'invoice_due_days') || '15',
     accounts: JSON.stringify(accounts),
-    ...(logo ? { org_logo: logo.file } : {}),
+    ...(logo ? { org_logo: logo.key } : {}),
     ...(s(fd, 'remove_logo') === '1' ? { org_logo: '' } : {}),
   });
   revalidatePath('/settings');

@@ -9,7 +9,7 @@ function csvField(v: unknown): string {
 /** CSV export of invoices, honouring the list filters (?status=&year=&q=). */
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
-  const rows = listInvoices({
+  const rows = await listInvoices({
     status: sp.get('status') ?? undefined,
     year: sp.get('year') ?? undefined,
     q: sp.get('q') ?? undefined,

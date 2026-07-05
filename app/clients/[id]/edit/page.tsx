@@ -5,9 +5,9 @@ import { ClientForm } from '@/components/forms/ClientForm';
 
 export default async function EditClientPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const client = getClient(Number(id));
+  const client = await getClient(Number(id));
   if (!client) notFound();
-  const contacts = contactsByClient(client.id);
+  const contacts = await contactsByClient(client.id);
 
   return (
     <div>

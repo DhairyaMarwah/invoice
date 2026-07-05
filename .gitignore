@@ -6,3 +6,7 @@ next-env.d.ts
 
 # Local data — SQLite database and uploaded contract PDFs
 /data
+
+# Secrets
+.env*
+!.env.example

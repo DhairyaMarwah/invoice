@@ -15,9 +15,9 @@ export default async function InvoicesPage({
   searchParams: Promise<{ status?: string; q?: string; year?: string }>;
 }) {
   const sp = await searchParams;
-  const invoices = listInvoices({ status: sp.status, q: sp.q, year: sp.year });
-  const years = invoiceYears();
-  const t = totals(sp.year);
+  const invoices = await listInvoices({ status: sp.status, q: sp.q, year: sp.year });
+  const years = await invoiceYears();
+  const t = await totals(sp.year);
 
   const segments = [
     { value: 'all', label: 'All' },
